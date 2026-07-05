@@ -26,6 +26,31 @@
 <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
 <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js"></script>
+<script>
+/* on-page error reporter: if the app throws (or Babel fails to compile), show it instead of a blank page */
+(function(){
+  function show(msg){
+    var r=document.getElementById('root');
+    var html='<div style="font:13px/1.6 ui-monospace,Menlo,monospace;color:#8a1020;background:#fff4f4;border:1px solid #f2c2c2;padding:16px 18px;margin:16px;border-radius:10px;white-space:pre-wrap;word-break:break-word">'
+      +'<b>App error — this is why the screen was blank:</b>\n\n'+String(msg)+'</div>';
+    if(r){ r.innerHTML=html; } else { document.addEventListener('DOMContentLoaded',function(){var rr=document.getElementById('root'); if(rr) rr.innerHTML=html;}); }
+  }
+  window.addEventListener('error',function(e){
+    show((e.message||'Error')+(e.filename?('\n'+String(e.filename).split('/').pop()+':'+e.lineno+':'+e.colno):'')+(e.error&&e.error.stack?('\n\n'+e.error.stack):''));
+  });
+  window.addEventListener('unhandledrejection',function(e){ show('Unhandled promise rejection:\n'+((e.reason&&e.reason.stack)||e.reason)); });
+  var _ce=console.error;
+  console.error=function(){
+    try{ var r=document.getElementById('root');
+      if(r && !r.childElementCount){
+        var m=Array.prototype.map.call(arguments,function(a){return (a&&a.stack)||(typeof a==='object'?JSON.stringify(a):String(a));}).join(' ');
+        if(m) show(m);
+      }
+    }catch(_){}
+    return _ce.apply(console,arguments);
+  };
+})();
+</script>
 <style>
   :root{
     --orange:#FF6D1F; --orange-soft:#FFF1E8; --orange-line:#FFD9C2;
@@ -186,7 +211,7 @@
 <div id="root"></div>
 <script type="text/babel" data-presets="react">
 const { useState, useMemo, useRef, useEffect } = React;
-const BUILD = "STRAT-1.0.0";
+const BUILD = "STRAT-1.0.1";
 const USE_MOCK = true;                       // flip to false to pull live from the sales-api
 const API_BASE = "http://localhost:8787";    // sales-api origin (Node/Express -> MySQL)
 
