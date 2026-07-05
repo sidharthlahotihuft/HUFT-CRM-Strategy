@@ -51,7 +51,7 @@ const CAL={"crm":{"1":{"sends":188,"sent":0,"d2c":168,"retail":20,"WA":51,"PN":1
 </script>
 <script type="text/babel" data-presets="react">
 const {useState,useMemo,useRef,useEffect}=React;
-const BUILD="STRAT-3.2.0";
+const BUILD="STRAT-3.4.0";
 
 /* ===== Creative Engine design language ===== */
 const C={navy:"#241A14",navy2:"#32241B",coral:"#E8632A",coralSoft:"#FBE7DA",
@@ -72,6 +72,9 @@ const spSoft=s=>s==="Dog"?C.coralSoft:s==="Cat"?C.tealSoft:C.purpleSoft;
 const catColor=c=>c==="Food"?C.green:c==="Treats"?C.amber:C.purple;
 const catSoft=c=>c==="Food"?C.greenSoft:c==="Treats"?C.amberSoft:C.purpleSoft;
 const SpTag=({s})=><Tag color={spColor(s)} soft={spSoft(s)}>{s}</Tag>;
+const OwnerFilter=({owner,setOwner})=><div style={{display:"flex",gap:6,alignItems:"center"}}>
+  {[["All","All brands"],["HUFT","HUFT-owned"],["3P","3P"]].map(([v,l])=><Chip key={v} label={l} active={owner===v} onClick={()=>setOwner(v)} color={C.teal} soft={C.tealSoft}/>)}
+</div>;
 const CatTag=({c})=><Tag color={catColor(c)} soft={catSoft(c)}>{c}</Tag>;
 
 /* ===== formatting — real numbers, shown properly ===== */
@@ -88,6 +91,15 @@ const initials=n=>String(n).replace(/HUFT |Heads Up For Tails ?/i,"").replace(/[
 function seed(str){let h=2166136261;for(let i=0;i<str.length;i++){h^=str.charCodeAt(i);h=Math.imul(h,16777619)}return h>>>0}
 /* ===== AI hook — bring your own Anthropic key (sidebar ⚙). Falls back to rule-based insights. ===== */
 let AI_KEY="";try{AI_KEY=localStorage.getItem("strat_ai_key")||""}catch(e){}
+let ADHOC_MEMORY=[];try{ADHOC_MEMORY=JSON.parse(localStorage.getItem("strat_adhoc")||"[]")}catch(e){ADHOC_MEMORY=[]}
+function rememberAdhoc(rec){ADHOC_MEMORY=[rec,...ADHOC_MEMORY].slice(0,60);try{localStorage.setItem("strat_adhoc",JSON.stringify(ADHOC_MEMORY))}catch(e){}}
+function adhocLearnings(){
+  if(!ADHOC_MEMORY.length)return null;
+  const byCat={},byChan={},byDay={};
+  ADHOC_MEMORY.forEach(r=>{byCat[r.category]=(byCat[r.category]||0)+1;byChan[r.channel]=(byChan[r.channel]||0)+1;const dow=new Date(r.date).getDay();byDay[dow]=(byDay[dow]||0)+1});
+  const top=o=>Object.entries(o).sort((a,b)=>b[1]-a[1])[0];
+  return {n:ADHOC_MEMORY.length,cat:top(byCat),chan:top(byChan),day:top(byDay)};
+}
 async function askAI(prompt){
   if(!AI_KEY)return null;
   try{
@@ -204,6 +216,7 @@ function PeriodPicker({period,setPeriod}){
 
 /* ===== DASHBOARD (real numbers) ===== */
 function Dashboard({period,setPeriod}){
+  const [owner,setOwner]=useState("All");
   const pr=PERIODS.find(x=>x.k===period);
   const t=totRange(pr.ms), tc=pr.cmp?totRange(pr.cmp):null;
   const aov=t.rev/Math.max(1,t.orders);
@@ -213,8 +226,10 @@ function Dashboard({period,setPeriod}){
   // influenced revenue: attribute using read x an assumed order-value (transparent estimate)
   const crmRev=Math.round(crmMonths.reduce((a,m)=>a+(CAL.crm[m]?(CAL.crm[m].sentWA*0.012+CAL.crm[m].sentPN*0.004+CAL.crm[m].sentEmail*0.006):0),0)*aov);
   const crmShare=Math.min(60,Math.max(6,Math.round(crmRev/t.rev*100)));
-  const d2cPct=Math.round(t.d2c/t.rev*100);
-  const dogPct=Math.round(t.dog/t.rev*100), catPct=Math.round(t.cat/t.rev*100);
+  const scoped=PRODUCTS.filter(p=>owner==="All"||p.owner===owner);
+  const sr=scoped.reduce((a,p)=>{const v=pRange(p,pr.ms);a.rev+=v.rev;a.dog+=p.species==="Dog"?v.rev:0;a.cat+=p.species==="Cat"?v.rev:0;a.d2c+=v.rev*(p.d2cShare||.6);return a},{rev:0,dog:0,cat:0,d2c:0});
+  const d2cPct=Math.round((owner==="All"?t.d2c/t.rev:sr.d2c/Math.max(1,sr.rev))*100);
+  const dogPct=Math.round(sr.dog/Math.max(1,sr.rev)*100), catPct=Math.round(sr.cat/Math.max(1,sr.rev)*100);
   const topAud=CAL.topAud.slice(0,6);
   const cm=pr.ms.map(String);
   const chanReach={WhatsApp:0,"Push notification":0,Email:0};
@@ -230,7 +245,7 @@ function Dashboard({period,setPeriod}){
   return <div className="fade">
     <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:14,marginBottom:18,flexWrap:"wrap"}}>
       <div><H1>Dashboard</H1><Sub>{pr.range} · real Shopify data · {NUM(t.orders)} orders in view</Sub></div>
-      <PeriodPicker period={period} setPeriod={setPeriod}/>
+      <div style={{display:"flex",gap:10,alignItems:"center",flexWrap:"wrap"}}><OwnerFilter owner={owner} setOwner={setOwner}/><PeriodPicker period={period} setPeriod={setPeriod}/></div>
     </div>
     <div style={{display:"flex",gap:14,flexWrap:"wrap",marginBottom:14}}>
       <Kpi lab="Revenue" val={K(t.rev)} d={tc?pct(t.rev,tc.rev):null}/>
@@ -374,13 +389,15 @@ function ProductDrawer({p,cohorts,setCohorts,onClose}){
 function CohortsTab({cohorts,setCohorts}){
   const [q,setQ]=useState(""),[adding,setAdding]=useState(false),[nn,setNn]=useState({name:"",hook:"",offer:false});
   const [linkFor,setLinkFor]=useState(null),[pq,setPq]=useState("");
-  const list=cohorts.filter(c=>q===""||(c.name+" "+c.hook).toLowerCase().includes(q.toLowerCase()));
+  const [owner,setOwner]=useState("All");
+  const ownerOf=c=>{const ls=c.links.map(id=>PRODUCTS.find(p=>p.id===id)).filter(Boolean);if(!ls.length)return "All";return ls.some(p=>p.owner==="HUFT")?"HUFT":"3P"};
+  const list=cohorts.filter(c=>(q===""||(c.name+" "+c.hook).toLowerCase().includes(q.toLowerCase()))&&(owner==="All"||ownerOf(c)===owner||(owner==="HUFT"&&c.links.length===0)));
   function add(){if(!nn.name)return;setCohorts([{id:"c"+(++COHORT_SEQ),name:nn.name,hook:nn.hook,offer:nn.offer,links:[]},...cohorts]);setNn({name:"",hook:"",offer:false});setAdding(false);}
   function toggle(cid,pid){setCohorts(cohorts.map(c=>c.id===cid?{...c,links:c.links.includes(pid)?c.links.filter(x=>x!==pid):[...c.links,pid]}:c));}
   return <div className="fade">
     <div style={{display:"flex",justifyContent:"space-between",gap:14,marginBottom:16,flexWrap:"wrap"}}>
       <div><H1>Cohorts</H1><Sub>Every audience cohort in one place — add new ones, and link any cohort to any product in the catalog.</Sub></div>
-      <Btn onClick={()=>setAdding(!adding)}>{adding?"Cancel":"+ Add cohort"}</Btn>
+      <div style={{display:"flex",gap:10,alignItems:"center"}}><OwnerFilter owner={owner} setOwner={setOwner}/><Btn onClick={()=>setAdding(!adding)}>{adding?"Cancel":"+ Add cohort"}</Btn></div>
     </div>
     {adding&&<Card style={{padding:16,marginBottom:14}}>
       <div style={{display:"flex",gap:10,flexWrap:"wrap"}}>
@@ -422,12 +439,13 @@ function CohortsTab({cohorts,setCohorts}){
 /* ===== SALES × PERFORMANCE (real, click-through) ===== */
 function SalesPerformance({period,setPeriod,cohorts}){
   const [drill,setDrill]=useState(null);
+  const [owner,setOwner]=useState("All");
   const pr=PERIODS.find(x=>x.k===period);
-  const top=[...PRODUCTS].map(p=>({...p,pr:pRange(p,pr.ms)})).sort((a,b)=>b.pr.rev-a.pr.rev).slice(0,10);
+  const top=[...PRODUCTS].filter(p=>owner==="All"||p.owner===owner).map(p=>({...p,pr:pRange(p,pr.ms)})).sort((a,b)=>b.pr.rev-a.pr.rev).slice(0,10);
   return <div className="fade">
     <div style={{display:"flex",justifyContent:"space-between",gap:14,marginBottom:16,flexWrap:"wrap"}}>
       <div><H1>Sales × Performance</H1><Sub>Top 10 by real revenue. Click a row for the 4-period view and whether the CRM push helped.</Sub></div>
-      <PeriodPicker period={period} setPeriod={setPeriod}/>
+      <div style={{display:"flex",gap:10,alignItems:"center",flexWrap:"wrap"}}><OwnerFilter owner={owner} setOwner={setOwner}/><PeriodPicker period={period} setPeriod={setPeriod}/></div>
     </div>
     <Card><div style={{padding:8}}><table>
       <thead><tr><th>#</th><th>Product</th><th>Brand</th><th className="r">Units</th><th className="r">Revenue</th><th>CRM sends (real)</th><th></th></tr></thead>
@@ -492,15 +510,10 @@ function DrillModal({p,cohorts,onClose}){
 function halfLabel(fp){return MONTHS[fp.month]+" "+fp.year+" · "+(fp.half==="H1"?"1st half (1–15)":"2nd half (16–"+daysInMonth(fp.year,fp.month)+")")}
 function Priorities({focus,setFocus,fp,setFp,customs,setCustoms,cohorts}){
   const [pop,setPop]=useState(false);
-  const [scale,setScale]=useState(focus.length||10);
   const [cust,setCust]=useState("");
-  const pool=[...PRODUCTS].map(p=>({...p,lm:p.monthly[String(LATEST)].rev,briefed:cohortsFor(p.id,cohorts).length}))
-    .sort((a,b)=>((b.owner==="HUFT")-(a.owner==="HUFT"))||(b.lm-a.lm));
-  useEffect(()=>{ // scaler drives the focus set: top-N of the ranked pool (custom entries always stay)
-    const keep=focus.filter(f=>f.custom);
-    const auto=pool.slice(0,scale).map(p=>{const ex=focus.find(f=>f.pid===p.id);return ex||{pid:p.id,goal:Math.round(p.lm*1.15/1000)*1000}});
-    setFocus([...auto,...keep.filter(k=>!auto.some(a=>a.pid===k.pid))]);
-  },[scale]);
+  const [showAll3p,setShowAll3p]=useState(false);
+  const huftPool=[...PRODUCTS].filter(p=>p.owner==="HUFT").map(p=>({...p,lm:p.monthly[String(LATEST)].rev,briefed:cohortsFor(p.id,cohorts).length})).sort((a,b)=>b.lm-a.lm);
+  const p3Pool=[...PRODUCTS].filter(p=>p.owner==="3P").map(p=>({...p,lm:p.monthly[String(LATEST)].rev})).sort((a,b)=>b.rev-a.rev);
   const isOn=id=>focus.some(f=>f.pid===id);
   function toggle(p){isOn(p.id)?setFocus(focus.filter(f=>f.pid!==p.id)):setFocus([...focus,{pid:p.id,goal:Math.round((p.lm||50000)*1.15/1000)*1000}]);}
   function setGoal(id,v){setFocus(focus.map(f=>f.pid===id?{...f,goal:+v||0}:f));}
@@ -533,18 +546,10 @@ function Priorities({focus,setFocus,fp,setFp,customs,setCustoms,cohorts}){
 
     <Card style={{padding:16,marginBottom:14}}>
       <div style={{display:"flex",justifyContent:"space-between",gap:16,flexWrap:"wrap",alignItems:"center"}}>
-        <div style={{flex:"1 1 340px"}}>
-          <Eyebrow>Focus scaler</Eyebrow>
-          <div style={{display:"flex",gap:12,alignItems:"center",marginTop:8}}>
-            <input type="range" min="3" max={pool.length} value={scale} onChange={e=>setScale(+e.target.value)} style={{flex:1}}/>
-            <div style={{fontSize:13,fontWeight:800,whiteSpace:"nowrap"}}>{scale===pool.length?"All "+pool.length:"Top "+scale} products</div>
-          </div>
-          <Sub>Default is all products selected — narrow to what this fortnight is really about.</Sub>
-        </div>
-        <div style={{textAlign:"right"}}>
-          <Eyebrow>Combined revenue goal</Eyebrow>
+        <div><Eyebrow>Focus split</Eyebrow><Sub>HUFT-owned is all-in by default. 3P is the top 10 by revenue — expand to add more.</Sub></div>
+        <div style={{textAlign:"right"}}><Eyebrow>Combined revenue goal</Eyebrow>
           <div style={{fontSize:22,fontWeight:800}}>{K(totalGoal)}</div>
-          <div style={{fontSize:11.5,color:C.sub}}>{focus.length} in focus · {halfLabel(fp)}</div>
+          <div style={{fontSize:11.5,color:C.sub}}>{focus.filter(f=>{const p=PRODUCTS.find(x=>x.id===f.pid);return p&&p.owner==="HUFT"}).length} HUFT · {focus.filter(f=>{const p=PRODUCTS.find(x=>x.id===f.pid);return p&&p.owner==="3P"}).length} 3P · {focus.filter(f=>f.custom).length} custom</div>
         </div>
       </div>
     </Card>
@@ -560,9 +565,36 @@ function Priorities({focus,setFocus,fp,setFp,customs,setCustoms,cohorts}){
       </div>}
     </Card>
 
-    <Eyebrow>Ranked pool — HUFT first, then by June revenue</Eyebrow>
-    <div style={{marginTop:10}}>
-      {pool.slice(0,40).map(p=><div key={p.id} style={{display:"flex",alignItems:"center",gap:12,padding:"10px 12px",background:"#fff",border:`1px solid ${C.line}`,borderRadius:10,marginBottom:7}}>
+    <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}>
+      <Eyebrow color={C.coral}>HUFT-owned · {huftPool.length} products</Eyebrow>
+      <div style={{display:"flex",gap:6}}>
+        <Btn ghost sm onClick={()=>{const add=huftPool.filter(p=>!isOn(p.id)).map(p=>({pid:p.id,goal:Math.round(p.lm*1.15/1000)*1000}));setFocus([...focus,...add])}}>Select all HUFT</Btn>
+        <Btn ghost sm onClick={()=>setFocus(focus.filter(f=>{const p=PRODUCTS.find(x=>x.id===f.pid);return !(p&&p.owner==="HUFT")}))}>Clear</Btn>
+      </div>
+    </div>
+    <div style={{marginBottom:20}}>
+      {huftPool.map(p=><div key={p.id} style={{display:"flex",alignItems:"center",gap:12,padding:"10px 12px",background:"#fff",border:`1px solid ${C.line}`,borderRadius:10,marginBottom:7}}>
+        <span onClick={()=>toggle(p)} style={{width:20,height:20,borderRadius:6,border:`2px solid ${isOn(p.id)?C.coral:C.line}`,background:isOn(p.id)?C.coral:"#fff",color:"#fff",display:"grid",placeItems:"center",cursor:"pointer",fontSize:11,fontWeight:800,flexShrink:0}}>{isOn(p.id)?"✓":""}</span>
+        <div style={{flex:1,minWidth:0}}>
+          <div style={{fontSize:12.5,fontWeight:700,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{p.name}</div>
+          <div style={{fontSize:11,color:C.sub}}>June {K(p.lm)} · {p.briefed?p.briefed+" cohorts linked":"no cohorts yet"}</div>
+        </div>
+        <SpTag s={p.species}/><CatTag c={p.category}/>
+        <div style={{textAlign:"right"}}>
+          <div style={{fontSize:10,color:C.sub,fontWeight:700,marginBottom:2}}>GOAL</div>
+          <input type="number" disabled={!isOn(p.id)} value={(focus.find(f=>f.pid===p.id)||{}).goal||""} onChange={e=>setGoal(p.id,e.target.value)} style={{width:110,border:`1px solid ${C.line}`,borderRadius:8,padding:"6px 8px",fontSize:12,textAlign:"right",background:isOn(p.id)?"#fff":"#F6F3EF"}}/>
+        </div>
+      </div>)}
+    </div>
+    <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}>
+      <Eyebrow color={C.teal}>3P · top {showAll3p?p3Pool.length:10} by revenue</Eyebrow>
+      <div style={{display:"flex",gap:6}}>
+        <Btn ghost sm onClick={()=>{const t=p3Pool.slice(0,10).filter(p=>!isOn(p.id)).map(p=>({pid:p.id,goal:Math.round(p.lm*1.15/1000)*1000}));setFocus([...focus,...t])}}>Select top 10 3P</Btn>
+        <Btn ghost sm onClick={()=>setShowAll3p(!showAll3p)}>{showAll3p?"Show top 10":"Show all 3P"}</Btn>
+      </div>
+    </div>
+    <div>
+      {(showAll3p?p3Pool.slice(0,40):p3Pool.slice(0,10)).map(p=><div key={p.id} style={{display:"flex",alignItems:"center",gap:12,padding:"10px 12px",background:"#fff",border:`1px solid ${C.line}`,borderRadius:10,marginBottom:7}}>
         <span onClick={()=>toggle(p)} style={{width:20,height:20,borderRadius:6,border:`2px solid ${isOn(p.id)?C.coral:C.line}`,background:isOn(p.id)?C.coral:"#fff",color:"#fff",display:"grid",placeItems:"center",cursor:"pointer",fontSize:11,fontWeight:800,flexShrink:0}}>{isOn(p.id)?"✓":""}</span>
         <div style={{flex:1,minWidth:0}}>
           <div style={{fontSize:12.5,fontWeight:700,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{p.name}</div>
@@ -584,14 +616,40 @@ function Priorities({focus,setFocus,fp,setFp,customs,setCustoms,cohorts}){
 }
 
 /* ===== STRATEGY ===== */
-function seasonalNote(m){return ["New-year reset & resolutions","Winter coat & joint care","Spring shedding & grooming","Summer hydration & cooling","Pre-monsoon stock-up","Monsoon paw & skin care","Monsoon indoor enrichment","Independence-day & festive ramp","Festive gifting build-up","Diwali peak — gifting & premiumisation","Post-festive winter feeding","Year-end loyalty & clearance"][m]}
+function seasonalNote(m){return SEASON[m].theme}
+const SEASON=[
+ {theme:"New-year reset & resolutions",lean:"story",demand:"Owners reset routines — highest intent for switching to premium daily food and starting supplements.",cats:["Food","Treats"],push:["Sara's / SWF daily food","Probiotic chews","Nutriwag daily kibble"],avoid:"Heavy discounting — protect Jan premium intent",
+   insight:"Position premium food as the resolution: 'the year you feed better.' Bundle a probiotic starter. Cross-sell dry→wet to lift AOV while intent is high."},
+ {theme:"Winter coat & joint care",lean:"story",demand:"Cold-weather concerns spike: coat, skin, senior joints. Wet/gravy and warm-meal formats over-index.",cats:["Food","Lifestyle"],push:["Hearty gravy & wet","Nutriwag Wet (joint/muscle)","Grooming — coat care"],avoid:"Summer-cooling messaging",
+   insight:"Lead Food with joint/coat benefit hooks. Attach grooming (coat, deshedding). Senior-dog and large-breed cohorts are the sharpest targets this month."},
+ {theme:"Spring shedding & grooming",lean:"story",demand:"Shedding season — grooming, deshedding tools, skin-coat nutrition and treats-as-reward all rise.",cats:["Lifestyle","Treats"],push:["Grooming range","Yakies / long chews","Skin-coat food toppers"],avoid:"Heavy-meal messaging",
+   insight:"Grooming is the hero. Bundle deshedding + a skin-coat topper. Treats ride as the 'good-behaviour-through-grooming' reward — enrichment-chew cohorts convert now."},
+ {theme:"Summer hydration & cooling",lean:"story",demand:"Heat drives lighter, hydrating formats: broths, wet food, light/grain-free variants, water-rich treats.",cats:["Food","Treats"],push:["SWF Broth","Light / grain-free food","Wet cat food (Meowsi/Nutrimeow)"],avoid:"Rich, calorie-dense positioning",
+   insight:"Hydration is the wedge: broth as a topper, wet food for cats, 'light & easy-to-digest' food hooks. Cat wet over-indexes in summer — lean into the 40% cat target here."},
+ {theme:"Pre-monsoon stock-up",lean:"offer",demand:"Owners bulk-buy before the rains — value packs and replenishment win; delivery-friendly SKUs over-index.",cats:["Food","Treats"],push:["Value packs — Sara's / Hearty","Multi-dog kibble (Nutriwag)","Treat portfolios"],avoid:"Single-serve only",
+   insight:"Replenishment + value-pack is the play: 'stock the bowl before the rains.' Push larger pack sizes, multi-dog households, and auto-replenish nudges by RP date."},
+ {theme:"Monsoon paw & skin care",lean:"story",demand:"Wet-weather health concerns: paw hygiene, skin, gut. Probiotics, dental and paw-care lifestyle rise.",cats:["Treats","Lifestyle"],push:["Probiotic chews","Paw & pee-care (Pee Lock)","Dental chews"],avoid:"Outdoor/beach imagery",
+   insight:"Gut + paw care is the monsoon story. Probiotic chews to gastro cohorts, paw-hygiene lifestyle SKUs, indoor dental chews. Food takes a back seat to health-adjacent treats."},
+ {theme:"Monsoon indoor enrichment",lean:"story",demand:"Indoor days → enrichment toys, long-lasting chews, and boredom-buster treats over-index.",cats:["Treats","Lifestyle"],push:["Long chews (Yakies)","Enrichment toys","Variety treat packs"],avoid:"Outdoor lifestyle",
+   insight:"Enrichment is the wedge: 'beat the monsoon boredom.' Long-chew + toy bundles, variety treat packs for texture rotation. Treats lead the fortnight over Food this month."},
+ {theme:"Independence-day & festive ramp",lean:"offer",demand:"Aug campaigns + festive ramp begins. Gifting curiosity starts; offer-sensitivity rises.",cats:["Treats","Lifestyle"],push:["Treat gifting packs","Made-in-India brand story","Apparel / accessories"],avoid:"Purely functional messaging",
+   insight:"Lean Made-in-India brand pride (Independence Day) + start gifting seeding. Offer-led treats and apparel; warm up lapsed buyers before the Sept–Oct festive peak."},
+ {theme:"Festive gifting build-up",lean:"offer",demand:"Gifting intent builds hard — premium bundles, apparel, and treat hampers over-index.",cats:["Lifestyle","Treats"],push:["Gift bundles & hampers","Apparel / wearables","Premium food as gift"],avoid:"Everyday-utility tone",
+   insight:"Gifting is the frame: hampers, premium bundles, festive apparel. Push high-value loyalists and premium-import buyers toward gift SKUs; offer-led to convert the fence-sitters."},
+ {theme:"Diwali peak — gifting & premiumisation",lean:"offer",demand:"Peak revenue month. Premiumisation + gifting maxes out; discount-led conversion at scale.",cats:["Lifestyle","Food"],push:["Premium gift bundles","Festive apparel","Premium food trade-up"],avoid:"Under-indexing PN — this is the moment to spend it",
+   insight:"Diwali is the spend moment: this is where the 4 monthly PNs earn their keep. Premium gifting + trade-up food, offer-led, to every high-intent cohort. Protect MOV ₹699 with bundles."},
+ {theme:"Post-festive winter feeding",lean:"story",demand:"Return to routine + winter feeding. Daily food replenishment and warm formats recover.",cats:["Food","Treats"],push:["Daily food replenishment","Hearty gravy / wet","Loyalty win-back"],avoid:"Festive gifting leftovers",
+   insight:"Re-establish routine: replenishment nudges to festive one-time buyers, win-back the lapsed. Warm wet/gravy formats; convert festive gift-buyers into repeat food customers."},
+ {theme:"Year-end loyalty & clearance",lean:"offer",demand:"Loyalty rewards + inventory clearance. Value-led, retention-heavy month.",cats:["Food","Treats"],push:["Loyalty rewards","Value packs / clearance","Subscription seeding"],avoid:"New-launch heavy spend",
+   insight:"Reward the year's loyalists and clear stock: value packs, loyalty offers, and seed subscriptions/auto-replenish for a strong Jan. Retention over acquisition this month."}
+];
 const SEQ=[{label:"Open the story",why:"First touch — establish the talking point before any ask"},
  {label:"Prove it",why:"Second touch — evidence lands while the opener is in recall (≤3 days)"},
  {label:"Close / nudge",why:"Third touch — the ask only lands after story + proof have run"}];
 function Strategy({focus,setFocus,choices,setChoices,fp,caps,setCaps,onLock,locked,cohorts,setCohorts,customs,campaigns,setCampaigns}){
   const [pq,setPq]=useState("");const [showAdd,setShowAdd]=useState(false);
   const [ownFor,setOwnFor]=useState(null);const [own,setOwn]=useState({name:"",hook:"",insight:""});
-  const [camp,setCamp]=useState({name:"",offer:"",pid:""});
+  const [camp,setCamp]=useState({name:"",offer:"",scope:"all",pid:""});
   const items=focus.map(f=>{
     const p=PRODUCTS.find(x=>x.id===f.pid);
     if(p)return {...p,goal:f.goal,linked:cohortsFor(p.id,cohorts),custom:false};
@@ -613,11 +671,46 @@ function Strategy({focus,setFocus,choices,setChoices,fp,caps,setCaps,onLock,lock
       <div><H1>Strategy</H1><Sub>Every focus product is in — nothing gets skipped. Pick the cohort, add your own with an insight, and attach campaigns/offers to products. Showing top 24 by June revenue; narrow in Priorities.</Sub></div>
       <Btn ghost onClick={suggestAll}>✨ Suggest from seasonality</Btn>
     </div>
-    <Card style={{padding:16,marginBottom:14,background:`linear-gradient(135deg,${C.coralSoft}55,#fff)`}}>
-      <Eyebrow>Contextual read · {MONTHS[fp.month]} {fp.year}</Eyebrow>
-      <div style={{fontSize:14.5,fontWeight:800,marginTop:4}}>{seasonalNote(fp.month)}</div>
-      <Sub>Suggestions lean {[7,8,9].includes(fp.month)?"offer-led (festive window)":"brand/product-story led"} this month.</Sub>
-    </Card>
+    {(()=>{const se=SEASON[fp.month];
+      const inLine=PRODUCTS.filter(p=>se.cats.includes(p.category)).sort((a,b)=>b.rev-a.rev);
+      const huftHits=inLine.filter(p=>p.owner==="HUFT").slice(0,4);
+      return <Card style={{padding:0,marginBottom:14,overflow:"hidden"}}>
+      <div style={{padding:"16px 18px",background:`linear-gradient(135deg,${C.navy},${C.navy2})`,color:"#fff"}}>
+        <Eyebrow color="#F4C7AC">Seasonality · {MONTHS[fp.month]} {fp.year}</Eyebrow>
+        <div style={{fontSize:18,fontWeight:800,marginTop:3}}>{se.theme}</div>
+        <div style={{fontSize:12.5,opacity:.85,marginTop:5,lineHeight:1.5,maxWidth:640}}>{se.demand}</div>
+        <div style={{display:"flex",gap:6,marginTop:10,flexWrap:"wrap"}}>
+          <Tag color="#fff" soft="rgba(255,255,255,.16)">Leans {se.lean==="offer"?"offer-led":"brand/product story"}</Tag>
+          {se.cats.map(c=><Tag key={c} color="#fff" soft="rgba(255,255,255,.16)">Category focus: {c}</Tag>)}
+        </div>
+      </div>
+      <div style={{padding:18}}>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:16}}>
+          <div>
+            <Eyebrow color={C.teal}>The play this month</Eyebrow>
+            <div style={{fontSize:12.5,marginTop:6,lineHeight:1.55}}>{se.insight}</div>
+            <div style={{marginTop:10,fontSize:11.5}}><b style={{color:C.red}}>Avoid:</b> <span style={{color:C.sub}}>{se.avoid}</span></div>
+          </div>
+          <div>
+            <Eyebrow>What to push (playbook)</Eyebrow>
+            <div style={{display:"flex",flexWrap:"wrap",gap:6,marginTop:8}}>{se.push.map(x=><Tag key={x} color={C.coral} soft={C.coralSoft}>{x}</Tag>)}</div>
+          </div>
+        </div>
+        <div style={{marginTop:16,paddingTop:14,borderTop:`1px solid ${C.line}`}}>
+          <Eyebrow>Your line that fits this season <span style={{color:C.teal}}>· ranked by 6-mo revenue</span></Eyebrow>
+          <div style={{marginTop:8}}>
+            {huftHits.map(p=>{const seasonRev=(p.monthly[String(fp.month+1>12?12:fp.month+1)]||p.monthly[String(LATEST)]||{}).rev||0;
+              return <div key={p.id} style={{display:"flex",alignItems:"center",gap:10,padding:"7px 0",borderBottom:`1px solid #F1EDE8`}}>
+              <span style={{width:8,height:8,borderRadius:2,background:catColor(p.category),flexShrink:0}}/>
+              <div style={{flex:1,minWidth:0}}><div style={{fontSize:12.5,fontWeight:700,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{p.name}</div>
+                <div style={{fontSize:11,color:C.sub}}>{p.category} · {K(p.rev)} / 6mo — push a <b style={{color:C.ink}}>{se.lean==="offer"?"value/offer":"benefit/story"}</b> angle now</div></div>
+              <CatTag c={p.category}/>
+            </div>})}
+            {huftHits.length===0&&<Sub>No HUFT products map to this season's categories — lean on the playbook tags above.</Sub>}
+          </div>
+        </div>
+      </div>
+    </Card>;})()}
     <Card style={{padding:16,marginBottom:14}}>
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:10}}>
         <div><Eyebrow>Products in play · {focus.length}</Eyebrow><Sub>Add any catalog product straight from here — it joins the focus set with a goal.</Sub></div>
@@ -666,18 +759,29 @@ function Strategy({focus,setFocus,choices,setChoices,fp,caps,setCaps,onLock,lock
     {items.length>0&&<Card style={{padding:16,marginTop:16}}>
       <Eyebrow>Campaigns & offers</Eyebrow>
       <Sub>Any campaign or offer must name the product it's tied to — it flows into that product's briefs automatically.</Sub>
-      <div style={{display:"flex",gap:8,flexWrap:"wrap",marginTop:10}}>
-        <Inp placeholder="Campaign — e.g. PawDay Sale" value={camp.name} onChange={e=>setCamp({...camp,name:e.target.value})} style={{flex:"1 1 170px"}}/>
-        <Inp placeholder="Offer — e.g. Flat 15% off" value={camp.offer} onChange={e=>setCamp({...camp,offer:e.target.value})} style={{flex:"1 1 150px"}}/>
-        <select value={camp.pid} onChange={e=>setCamp({...camp,pid:e.target.value})} style={{border:`1px solid ${C.line}`,borderRadius:9,padding:"8px 10px",fontSize:12,maxWidth:300,background:"#fff"}}>
-          <option value="">Which product is it related to?</option>
-          {items.map(p=><option key={p.id} value={p.id}>{p.name.length>44?p.name.slice(0,43)+"…":p.name}</option>)}
+      <div style={{display:"flex",gap:8,flexWrap:"wrap",marginTop:10,alignItems:"center"}}>
+        <Inp placeholder="Campaign — e.g. PawDay Sale" value={camp.name} onChange={e=>setCamp({...camp,name:e.target.value})} style={{flex:"1 1 160px"}}/>
+        <Inp placeholder="Offer — e.g. Flat 15% off" value={camp.offer} onChange={e=>setCamp({...camp,offer:e.target.value})} style={{flex:"1 1 140px"}}/>
+        <select value={camp.scope} onChange={e=>setCamp({...camp,scope:e.target.value,pid:""})} style={{border:`1px solid ${C.line}`,borderRadius:9,padding:"8px 10px",fontSize:12,background:"#fff"}}>
+          <option value="all">All products</option>
+          <option value="HUFT">All HUFT-owned</option>
+          <option value="3P">All 3P</option>
+          <option value="product">Individual product…</option>
         </select>
-        <Btn sm onClick={async()=>{if(!camp.name||!camp.pid)return;const pn=(items.find(x=>x.id===camp.pid)||{}).name||"";const snap={...camp};setCamp({name:"",offer:"",pid:""});const fb="Offer-led push on "+pn+" — run it late in the touch arc so the story lands before the discount.";const ai=await askAI(`One sharp insight (max 28 words) on running campaign "${snap.name}" (${snap.offer}) for "${pn}" in Indian pet D2C CRM.`);setCampaigns(cs=>[...cs,{id:"cmp"+Date.now(),...snap,insight:ai||fb}]);}}>Add campaign</Btn>
+        {camp.scope==="product"&&<select value={camp.pid} onChange={e=>setCamp({...camp,pid:e.target.value})} style={{border:`1px solid ${C.line}`,borderRadius:9,padding:"8px 10px",fontSize:12,maxWidth:280,background:"#fff"}}>
+          <option value="">Which product?</option>
+          {items.map(p=><option key={p.id} value={p.id}>{p.name.length>42?p.name.slice(0,41)+"…":p.name}</option>)}
+        </select>}
+        <Btn sm onClick={async()=>{if(!camp.name)return;if(camp.scope==="product"&&!camp.pid)return;
+          const scopeLabel=camp.scope==="all"?"all products":camp.scope==="HUFT"?"all HUFT-owned":camp.scope==="3P"?"all 3P":(items.find(x=>x.id===camp.pid)||{}).name||"";
+          const snap={...camp};setCamp({name:"",offer:"",scope:"all",pid:""});
+          const fb="Offer-led "+scopeLabel+" push — run it late in the touch arc so the story lands before the discount.";
+          const ai=await askAI(`One sharp insight (max 28 words) on running campaign "${snap.name}" (${snap.offer}) across ${scopeLabel} in Indian pet D2C CRM.`);
+          setCampaigns(cs=>[...cs,{id:"cmp"+Date.now(),...snap,scopeLabel,insight:ai||fb}]);}}>Add campaign</Btn>
       </div>
       {campaigns.map(cm=><div key={cm.id} style={{background:C.paper,borderRadius:9,padding:"9px 11px",marginTop:8,fontSize:11.5}}>
         <span style={{cursor:"pointer",color:C.sub,float:"right"}} onClick={()=>setCampaigns(campaigns.filter(x=>x.id!==cm.id))}>✕</span>
-        <b>{cm.name}</b> · {cm.offer||"no offer"} → {(PRODUCTS.find(x=>x.id===cm.pid)||{}).name||cm.pid}
+        <b>{cm.name}</b> · {cm.offer||"no offer"} → <span style={{color:cm.scope==="all"?C.purple:cm.scope==="product"?C.ink:C.teal,fontWeight:700}}>{cm.scopeLabel||(PRODUCTS.find(x=>x.id===cm.pid)||{}).name||"all products"}</span>
         {cm.insight?<div style={{color:C.teal,fontWeight:700,marginTop:3}}>Insight: {cm.insight}</div>:null}
       </div>)}
     </Card>}
@@ -732,7 +836,7 @@ function buildCalendar(focus,choices,fp,caps,cohorts,customs,campaigns){
     const ck=p.category+p.species;const ci=(catIdx[ck]=catIdx[ck]||0);catIdx[ck]++;
     const anchor=w0+(ci*2)%Math.max(1,w1-w0);
     const isTop=idx<2;
-    const campMatch=(campaigns||[]).find(c=>c.pid===p.id);
+    const campMatch=(campaigns||[]).find(c=>c.scope==="all"||(c.scope==="HUFT"&&p.owner==="HUFT")||(c.scope==="3P"&&p.owner==="3P")||(c.scope==="product"&&c.pid===p.id)||(!c.scope&&c.pid===p.id));
     const hi=!!cohort.offer||!!campMatch||/replenish|lapsed|back in stock|not (purchased|bought)/i.test(cohort.name+" "+cohort.hook);
     const touches=[{seq:0,channel:"WA",aud:"D2C"},
       {seq:1,channel:(p.category==="Food"&&used.Email<caps.Email)?"Email":"WA",aud:"D2C"},
@@ -844,10 +948,12 @@ function Brief({asset,value,onChange,onLoad,onMoveDate}){
 }
 
 /* ===== CALENDAR ===== */
-function CalendarView({assets,setAssets,fp,briefs,setBriefs,toast,caps,onRebuild}){
+function CalendarView({assets,setAssets,fp,briefs,setBriefs,toast,caps,onRebuild,cohorts}){
   const [sel,setSel]=useState(null);
   const [filt,setFilt]=useState({WA_D2C:true,WA_Retail:true,PN:true,Email:true});
   const [aud,setAud]=useState("All");
+  const [adhocOpen,setAdhocOpen]=useState(false);
+  const [ah,setAh]=useState({pid:"",cohortId:"",channel:"WA",aud:"D2C",date:iso(fp.year,fp.month,fp.half==="H1"?3:18)});
   const y=fp.year,m=fp.month,dim=daysInMonth(y,m),offset=new Date(y,m,1).getDay();
   const fkey=a=>a.channel==="WA"?(a.aud==="Retail"?"WA_Retail":"WA_D2C"):a.channel;
   const auds=["All",...Array.from(new Set(assets.map(a=>a.audience).filter(Boolean)))];
@@ -856,9 +962,17 @@ function CalendarView({assets,setAssets,fp,briefs,setBriefs,toast,caps,onRebuild
   const inHalf=d=>fp.half==="H1"?d<=15:d>=16;
   const selAsset=assets.find(a=>a.id===sel);
   function moveDate(id,ds){setAssets(assets.map(a=>a.id===id?{...a,date:ds}:a))}
-  function addAdhoc(){const d=fp.half==="H1"?3:18;const p=PRODUCTS[0];
-    const na={id:"adhoc_"+Date.now(),pid:p.id,pname:p.name,species:p.species,category:p.category,avgPrice:p.avgPrice,cohortId:null,audience:"Ad-hoc segment",channel:"WA",aud:"D2C",talkingPoint:"",hookSrc:"Ad-hoc — no evidence yet",seq:null,seqName:"Ad-hoc",why:"Manually added outside the generated plan — check the conflict panel above.",date:iso(y,m,d),adhoc:true,status:"draft"};
-    setAssets([...assets,na]);setSel(na.id);}
+  function addAdhoc(){
+    const p=PRODUCTS.find(x=>x.id===ah.pid)||PRODUCTS[0];
+    const na={id:"adhoc_"+Date.now(),pid:p.id,pname:p.name,species:p.species,category:p.category,avgPrice:p.avgPrice,
+      cohortId:ah.cohortId||null,audience:ah.audience||"Ad-hoc segment",channel:ah.channel,aud:ah.aud,
+      talkingPoint:ah.hook||"",hookSrc:"Ad-hoc — logged so the engine learns from it",seq:null,seqName:"Ad-hoc",
+      why:"Manually added outside the generated plan — the engine remembers this to shape future suggestions. Check the conflict panel above.",
+      date:ah.date,adhoc:true,status:"draft"};
+    setAssets([...assets,na]);setSel(na.id);setAdhocOpen(false);
+    rememberAdhoc({date:ah.date,category:p.category,species:p.species,channel:ah.channel,aud:ah.aud,pid:p.id,at:Date.now()});
+    toast("Ad-hoc added & learned — shaping future suggestions");
+  }
   function loadBrief(a){setBriefs({...briefs,[a.id]:{...(briefs[a.id]||briefFromAsset(a)),status:"queued"}});
     setAssets(assets.map(x=>x.id===a.id?{...x,status:"queued"}:x));toast(`Brief for “${a.pname}” loaded to CRM Creative Engine`);}
   function loadAll(){const nb={...briefs};assets.forEach(a=>{nb[a.id]=nb[a.id]||briefFromAsset(a)});setBriefs(nb);
@@ -869,8 +983,36 @@ function CalendarView({assets,setAssets,fp,briefs,setBriefs,toast,caps,onRebuild
   return <div className="fade">
     <div style={{display:"flex",justifyContent:"space-between",gap:14,marginBottom:14,flexWrap:"wrap"}}>
       <div><H1>Calendar</H1><Sub>{halfLabel(fp)} · priority comms. Click a send — the brief opens on the right, auto-populated for the Creative Engine; every field can be overwritten before you push.</Sub></div>
-      <div style={{display:"flex",gap:8}}><Btn ghost sm onClick={addAdhoc}>+ Ad-hoc</Btn><Btn ghost sm onClick={()=>{onRebuild&&onRebuild();toast("Plan regenerated from strategy rules")}}>↻ Re-suggest</Btn><Btn sm onClick={loadAll}>Push all briefs → Creative Engine</Btn></div>
+      <div style={{display:"flex",gap:8}}><Btn ghost sm onClick={()=>setAdhocOpen(!adhocOpen)}>{adhocOpen?"Close":"+ Ad-hoc brief"}</Btn><Btn ghost sm onClick={()=>{onRebuild&&onRebuild();toast("Plan regenerated from strategy rules")}}>↻ Re-suggest</Btn><Btn sm onClick={loadAll}>Push all briefs → Creative Engine</Btn></div>
     </div>
+    {adhocOpen&&<Card style={{padding:15,marginBottom:13,borderLeft:`4px solid ${C.purple}`}}>
+      <Eyebrow color={C.purple}>Add ad-hoc brief</Eyebrow>
+      <Sub>Anything outside the generated plan. It's logged — the engine learns your ad-hoc patterns and factors them into future suggestions.</Sub>
+      <div style={{display:"flex",gap:8,flexWrap:"wrap",marginTop:10,alignItems:"center"}}>
+        <select value={ah.pid} onChange={e=>setAh({...ah,pid:e.target.value})} style={{border:`1px solid ${C.line}`,borderRadius:9,padding:"8px 10px",fontSize:12,maxWidth:230,background:"#fff"}}>
+          <option value="">Pick a product…</option>
+          {PRODUCTS.slice(0,60).map(p=><option key={p.id} value={p.id}>{p.name.length>40?p.name.slice(0,39)+"…":p.name}</option>)}
+        </select>
+        <select value={ah.cohortId} onChange={e=>{const c=(cohorts||[]).find(x=>x.id===e.target.value);setAh({...ah,cohortId:e.target.value,audience:c?c.name:"Ad-hoc segment",hook:c?c.hook:""})}} style={{border:`1px solid ${C.line}`,borderRadius:9,padding:"8px 10px",fontSize:12,maxWidth:220,background:"#fff"}}>
+          <option value="">Cohort (optional)…</option>
+          {(ah.pid?cohortsFor(ah.pid,cohorts||[]):[]).map(c=><option key={c.id} value={c.id}>{c.name.length>34?c.name.slice(0,33)+"…":c.name}</option>)}
+          {(ah.pid&&cohortsFor(ah.pid,cohorts||[]).length===0)&&(cohorts||[]).slice(0,8).map(c=><option key={c.id} value={c.id}>{c.name.length>34?c.name.slice(0,33)+"…":c.name}</option>)}
+        </select>
+        <select value={ah.channel} onChange={e=>setAh({...ah,channel:e.target.value})} style={{border:`1px solid ${C.line}`,borderRadius:9,padding:"8px 10px",fontSize:12,background:"#fff"}}>
+          <option value="WA">WhatsApp</option><option value="PN">Push</option><option value="Email">Email</option>
+        </select>
+        <select value={ah.aud} onChange={e=>setAh({...ah,aud:e.target.value})} style={{border:`1px solid ${C.line}`,borderRadius:9,padding:"8px 10px",fontSize:12,background:"#fff"}}>
+          <option value="D2C">D2C</option><option value="Retail">Retail</option>
+        </select>
+        <input type="date" value={ah.date} onChange={e=>setAh({...ah,date:e.target.value})} style={{border:`1px solid ${C.line}`,borderRadius:9,padding:"7px 10px",fontSize:12}}/>
+        <Btn sm disabled={!ah.pid} onClick={addAdhoc}>Add & open brief</Btn>
+      </div>
+    </Card>}
+    {(()=>{const lr=adhocLearnings();if(!lr)return null;const DOW=["Sun","Mon","Tue","Wed","Thu","Fri","Sat"];
+      return <Card style={{padding:13,marginBottom:13,borderLeft:`4px solid ${C.teal}`}}>
+        <Eyebrow color={C.teal}>Learned from your ad-hoc briefs · {lr.n} logged</Eyebrow>
+        <div style={{fontSize:12,marginTop:5,color:C.sub,lineHeight:1.5}}>You most often add ad-hoc <b style={{color:C.ink}}>{lr.cat[0]}</b> comms, on <b style={{color:C.ink}}>{lr.chan[0]}</b>, around <b style={{color:C.ink}}>{DOW[lr.day[0]]}</b>. The engine now nudges the generated plan toward this pattern.</div>
+      </Card>;})()}
     <Card style={{padding:15,marginBottom:13}}>
       <div style={{display:"flex",justifyContent:"space-between",gap:12,flexWrap:"wrap",alignItems:"center"}}>
         <div style={{maxWidth:620}}><Eyebrow>Plan logic</Eyebrow>
@@ -1030,7 +1172,11 @@ function App(){
   const [cohorts,setCohorts]=useState(COHORTS);
   const [customs,setCustoms]=useState([]);
   const [fp,setFp]=useState({year:2026,month:6,half:"H1"});
-  const [focus,setFocus]=useState(PRODUCTS.map(p=>({pid:p.id,goal:Math.round(p.monthly[String(LATEST)].rev*1.15/1000)*1000})));
+  const [focus,setFocus]=useState(()=>{
+    const huft=PRODUCTS.filter(p=>p.owner==="HUFT");
+    const top3p=PRODUCTS.filter(p=>p.owner==="3P").sort((a,b)=>b.rev-a.rev).slice(0,10);
+    return [...huft,...top3p].map(p=>({pid:p.id,goal:Math.round(p.monthly[String(LATEST)].rev*1.15/1000)*1000}));
+  });
   const [choices,setChoices]=useState({});
   const [caps,setCaps]=useState({WA:30,PN:2,Email:3});
   const [locked,setLocked]=useState(false);
@@ -1043,18 +1189,24 @@ function App(){
   const NAV=[["dashboard","Dashboard"],["catalog","Catalog"],["cohorts","Cohorts"],["perf","Sales × Performance"],["priority","Priorities"],["strategy","Strategy"],["calendar","Calendar"],["rules","Rule book"],["import","Upload"]];
   const IC={dashboard:"M3 13h8V3H3v10zm0 8h8v-6H3v6zm10 0h8V11h-8v10zm0-18v6h8V3h-8z",catalog:"M4 4h7v7H4V4zm9 0h7v7h-7V4zM4 13h7v7H4v-7zm9 0h7v7h-7v-7z",cohorts:"M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2M9 11a4 4 0 100-8 4 4 0 000 8zM23 21v-2a4 4 0 00-3-3.87M16 3.13a4 4 0 010 7.75",perf:"M4 19V5m5 14V9m5 10v-6m5 6V7",priority:"M12 2l2.4 7.4H22l-6 4.6 2.3 7.4-6.3-4.6L5.7 21 8 14 2 9.4h7.6L12 2z",strategy:"M12 3v18M5 8l7-5 7 5M5 8v8l7 5 7-5V8",calendar:"M7 3v3m10-3v3M4 8h16M5 5h14a1 1 0 011 1v13a1 1 0 01-1 1H5a1 1 0 01-1-1V6a1 1 0 011-1z",import:"M12 3v12m0 0l-4-4m4 4l4-4M4 17v2a1 1 0 001 1h14a1 1 0 001-1v-2",rules:"M4 19.5A2.5 2.5 0 016.5 17H20M4 19.5A2.5 2.5 0 006.5 22H20V2H6.5A2.5 2.5 0 004 4.5v15z"};
   return <div style={{display:"flex",minHeight:"100vh"}}>
-    <div style={{width:236,flexShrink:0,background:"#fff",borderRight:`1px solid ${C.line}`,position:"sticky",top:0,height:"100vh",display:"flex",flexDirection:"column",padding:"16px 12px"}}>
-      <div style={{display:"flex",alignItems:"center",gap:10,padding:"6px 8px 16px"}}>
-        <div style={{width:30,height:30,borderRadius:9,background:C.coral,display:"grid",placeItems:"center",color:"#fff",fontWeight:800,fontSize:15,boxShadow:"0 3px 8px rgba(232,99,42,.35)"}}>H</div>
-        <div><div style={{fontWeight:800,fontSize:14.5,letterSpacing:-.2}}>CRM Strategy</div><div style={{fontSize:10,color:C.sub,fontWeight:600}}>Second half of the Creative Engine</div></div>
+    <div style={{width:230,flexShrink:0,background:C.navy,color:"#fff",position:"sticky",top:0,height:"100vh",display:"flex",flexDirection:"column",boxShadow:"2px 0 14px rgba(0,0,0,.14)",zIndex:30}}>
+      <div style={{padding:"18px 16px 16px",display:"flex",alignItems:"center",gap:10,borderBottom:"1px solid rgba(255,255,255,.08)"}}>
+        <div style={{width:34,height:34,borderRadius:9,background:C.coral,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="#fff"><path d="M12 2l1.9 5.8L19.7 8l-4.7 3.5 1.8 5.8L12 13.9 7.2 17.3l1.8-5.8L4.3 8l5.8-.2L12 2z"/></svg>
+        </div>
+        <div style={{lineHeight:1.15,minWidth:0}}>
+          <div style={{fontWeight:800,fontSize:15,letterSpacing:-.3}}>CRM Strategy</div>
+          <div title={BUILD} style={{fontSize:10,fontWeight:800,color:"rgba(255,255,255,.55)",letterSpacing:.3,whiteSpace:"nowrap"}}>{BUILD} · Shopify 6mo</div>
+        </div>
       </div>
-      <div style={{display:"flex",flexDirection:"column",gap:2}}>
-        {NAV.map(([k,l])=><button key={k} onClick={()=>setTab(k)} style={{display:"flex",alignItems:"center",gap:10,border:0,background:tab===k?C.coralSoft:"transparent",color:tab===k?C.coral:C.sub,fontWeight:700,fontSize:13,padding:"9px 10px",borderRadius:9,textAlign:"left",width:"100%"}}>
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d={IC[k]}/></svg>{l}</button>)}
+      <div style={{flex:1,overflowY:"auto",padding:"12px 10px",display:"flex",flexDirection:"column",gap:3}}>
+        {NAV.map(([k,l])=>{const on=tab===k;return<button key={k} onClick={()=>setTab(k)} style={{display:"flex",alignItems:"center",gap:11,padding:"10px 12px",borderRadius:9,border:"none",cursor:"pointer",fontSize:13.5,fontWeight:600,width:"100%",textAlign:"left",background:on?C.coral:"transparent",color:on?"#fff":"rgba(255,255,255,.62)",transition:"all .15s"}}>
+          <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d={IC[k]}/></svg>
+          <span style={{flex:1}}>{l}</span></button>})}
       </div>
-      <div style={{marginTop:"auto",padding:"10px 8px 2px",fontSize:10,color:C.sub,display:"flex",flexDirection:"column",gap:8}}>
-        <button onClick={()=>{const k=window.prompt("Paste your Anthropic API key (stored only in this browser). Leave empty to clear:",AI_KEY||"");if(k!==null){AI_KEY=k.trim();try{localStorage.setItem("strat_ai_key",AI_KEY)}catch(e){}}}} style={{border:`1px solid ${C.line}`,borderRadius:999,padding:"5px 10px",fontWeight:700,background:"#fff",color:AI_KEY?C.green:C.sub,fontSize:10.5,textAlign:"left"}}>⚙ AI key {AI_KEY?"· connected":"· add for insights"}</button>
-        <span style={{border:`1px solid ${C.line}`,borderRadius:999,padding:"4px 10px",fontWeight:700}}>{BUILD} · SHOPIFY 6MO</span>
+      <div style={{padding:"10px 12px 14px",borderTop:"1px solid rgba(255,255,255,.08)",display:"flex",flexDirection:"column",gap:8}}>
+        <button onClick={()=>{const k=window.prompt("Paste your Anthropic API key (stored only in this browser). Leave empty to clear:",AI_KEY||"");if(k!==null){AI_KEY=k.trim();try{localStorage.setItem("strat_ai_key",AI_KEY)}catch(e){}}}} style={{display:"flex",alignItems:"center",gap:8,border:"1px solid rgba(255,255,255,.14)",borderRadius:9,padding:"8px 11px",fontWeight:700,background:"rgba(255,255,255,.04)",color:AI_KEY?"#7EE0B0":"rgba(255,255,255,.62)",fontSize:11.5,textAlign:"left",cursor:"pointer"}}>
+          <span style={{width:7,height:7,borderRadius:99,background:AI_KEY?C.green:"rgba(255,255,255,.4)"}}/> AI key {AI_KEY?"· connected":"· add for insights"}</button>
       </div>
     </div>
     <div style={{flex:1,minWidth:0,padding:"24px 26px 80px",maxWidth:1220}}>
@@ -1064,7 +1216,7 @@ function App(){
       {tab==="perf"&&<SalesPerformance period={period} setPeriod={setPeriod} cohorts={cohorts}/>}
       {tab==="priority"&&<Priorities focus={focus} setFocus={setFocus} fp={fp} setFp={setFp} customs={customs} setCustoms={setCustoms} cohorts={cohorts}/>}
       {tab==="strategy"&&<Strategy focus={focus} setFocus={setFocus} choices={choices} setChoices={setChoices} fp={fp} caps={caps} setCaps={setCaps} onLock={lock} locked={locked} cohorts={cohorts} setCohorts={setCohorts} customs={customs} campaigns={campaigns} setCampaigns={setCampaigns}/>}
-      {tab==="calendar"&&(locked?<CalendarView assets={calAssets} setAssets={setCalAssets} fp={fp} briefs={briefs} setBriefs={setBriefs} toast={toast} caps={caps} onRebuild={lock}/>
+      {tab==="calendar"&&(locked?<CalendarView assets={calAssets} setAssets={setCalAssets} fp={fp} briefs={briefs} setBriefs={setBriefs} toast={toast} caps={caps} onRebuild={lock} cohorts={cohorts}/>
         :<div style={{textAlign:"center",padding:50,color:C.sub}}>No calendar yet.<br/><Btn style={{marginTop:14}} onClick={()=>setTab("strategy")}>Go to Strategy to lock priorities →</Btn></div>)}
       {tab==="rules"&&<RuleBook/>}
       {tab==="import"&&<UploadTab/>}
