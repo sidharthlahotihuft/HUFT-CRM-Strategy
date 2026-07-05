@@ -5,19 +5,9 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>HUFT CRM Strategy</title>
 <!--
-  HUFT CRM Strategy Engine
-  BUILD: STRAT-1.0.0
-  Single-file React (UMD + Babel), no build step. Deploy to Vercel as index.html.
-  Family: sits alongside CRM Creative (live) + Sales Insight Engine. HUFT brand (Sweet Orange #FF6D1F, Rubik).
-
-  DATA CONTRACT (swap-to-real):
-    USE_MOCK=true  -> uses embedded mock built on the REAL HUFT catalog + real cohort brief grid.
-    USE_MOCK=false -> wire the fetchers in the DATA LAYER section to named Supabase RPCs / MySQL views:
-        fetchSales(period)      -> rpc('strategy_sales_by_product', {period})
-        fetchAffinity()         -> rpc('strategy_combo_affinity')          (2-3 product co-purchase)
-        fetchAssets(period)     -> rpc('strategy_asset_performance', {period})  (CleverTap-fed)
-    Order shape mirrors the CleverTap "Charged" event: per line-item Product Name, category(=product.type),
-    item_price, brand(=vendor), product_url, image_url, cookie_id(=sku), tags, Quantity, RP_date.
+  HUFT CRM Strategy Engine — BUILD STRAT-2.0.0
+  Single-file React (UMD + Babel classic runtime). CRM Creative look & feel, left nav.
+  Flow: Dashboard -> Catalog -> Sales x Performance -> Priorities -> Strategy -> Calendar (guided brief -> Creative Engine).
 -->
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -27,83 +17,78 @@
 <script src="https://unpkg.com/@babel/standalone@7.24.7/babel.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js"></script>
 <script>
-/* on-page error reporter: if the app throws (or Babel fails to compile), show it instead of a blank page */
+/* on-page error reporter: show errors instead of a blank page */
 (function(){
   function show(msg){
     var r=document.getElementById('root');
-    var html='<div style="font:13px/1.6 ui-monospace,Menlo,monospace;color:#8a1020;background:#fff4f4;border:1px solid #f2c2c2;padding:16px 18px;margin:16px;border-radius:10px;white-space:pre-wrap;word-break:break-word">'
-      +'<b>App error — this is why the screen was blank:</b>\n\n'+String(msg)+'</div>';
+    var html='<div style="font:13px/1.6 ui-monospace,Menlo,monospace;color:#8a1020;background:#fff4f4;border:1px solid #f2c2c2;padding:16px 18px;margin:16px;border-radius:10px;white-space:pre-wrap;word-break:break-word"><b>App error — this is why the screen was blank:</b>\n\n'+String(msg)+'</div>';
     if(r){ r.innerHTML=html; } else { document.addEventListener('DOMContentLoaded',function(){var rr=document.getElementById('root'); if(rr) rr.innerHTML=html;}); }
   }
-  window.addEventListener('error',function(e){
-    show((e.message||'Error')+(e.filename?('\n'+String(e.filename).split('/').pop()+':'+e.lineno+':'+e.colno):'')+(e.error&&e.error.stack?('\n\n'+e.error.stack):''));
-  });
+  window.addEventListener('error',function(e){ show((e.message||'Error')+(e.filename?('\n'+String(e.filename).split('/').pop()+':'+e.lineno+':'+e.colno):'')+(e.error&&e.error.stack?('\n\n'+e.error.stack):'')); });
   window.addEventListener('unhandledrejection',function(e){ show('Unhandled promise rejection:\n'+((e.reason&&e.reason.stack)||e.reason)); });
   var _ce=console.error;
-  console.error=function(){
-    try{ var r=document.getElementById('root');
-      if(r && !r.childElementCount){
-        var m=Array.prototype.map.call(arguments,function(a){return (a&&a.stack)||(typeof a==='object'?JSON.stringify(a):String(a));}).join(' ');
-        if(m) show(m);
-      }
-    }catch(_){}
-    return _ce.apply(console,arguments);
-  };
+  console.error=function(){ try{ var r=document.getElementById('root'); if(r && !r.childElementCount){ var m=Array.prototype.map.call(arguments,function(a){return (a&&a.stack)||(typeof a==='object'?JSON.stringify(a):String(a));}).join(' '); if(m) show(m); } }catch(_){} return _ce.apply(console,arguments); };
 })();
 </script>
 <style>
   :root{
-    --orange:#FF6D1F; --orange-soft:#FFF1E8; --orange-line:#FFD9C2;
-    --teal:#0E8C82; --teal-soft:#E4F4F2;               /* Cat accent, complements orange */
+    --orange:#FF6D1F; --orange-soft:#FFF1E8; --orange-line:#FFD9C2; --orange-deep:#C4531A;
+    --teal:#0E8C82; --teal-soft:#E4F4F2;
     --ink:#1A1512; --muted:#8B817A; --faint:#B7ADA4;
-    --paper:#FBF8F4; --card:#FFFFFF; --line:#ECE4DA; --line-2:#F4EEE6;
+    --paper:#FAF6EF; --card:#FFFFFF; --line:#ECE4DA; --line-2:#F4EEE6;
     --good:#1E9E6A; --good-soft:#E6F5EE; --warn:#C77D12; --warn-soft:#FBF0DE; --bad:#D14343; --bad-soft:#FBE9E9;
     --shadow:0 1px 2px rgba(26,21,18,.05),0 6px 20px rgba(26,21,18,.05);
-    --r:14px; --r-sm:10px;
+    --r:14px; --r-sm:10px; --side:236px;
   }
   *{box-sizing:border-box}
   body{margin:0;background:var(--paper);color:var(--ink);font-family:Rubik,system-ui,sans-serif;-webkit-font-smoothing:antialiased}
-  #root{min-height:100vh}
-  a{color:inherit}
   button{font-family:inherit;cursor:pointer}
+  input,textarea,select{font-family:inherit}
   ::selection{background:var(--orange-line)}
+  code{background:var(--line-2);padding:1px 5px;border-radius:5px;font-size:.9em}
 
-  /* shell */
-  .top{position:sticky;top:0;z-index:40;background:rgba(251,248,244,.86);backdrop-filter:blur(10px);border-bottom:1px solid var(--line)}
-  .top-in{max-width:1240px;margin:0 auto;padding:12px 22px;display:flex;align-items:center;gap:16px}
-  .brand{display:flex;align-items:center;gap:11px;font-weight:800;letter-spacing:-.02em;font-size:16px}
+  /* ---- shell ---- */
+  .app{display:flex;min-height:100vh}
+  .side{width:var(--side);flex-shrink:0;background:var(--card);border-right:1px solid var(--line);position:sticky;top:0;height:100vh;display:flex;flex-direction:column;padding:16px 12px}
+  .logo{display:flex;align-items:center;gap:10px;padding:6px 8px 16px;font-weight:800;letter-spacing:-.02em;font-size:15px}
   .paw{width:30px;height:30px;border-radius:9px;background:var(--orange);display:grid;place-items:center;color:#fff;font-weight:800;font-size:15px;box-shadow:0 3px 8px rgba(255,109,31,.35)}
-  .brand small{display:block;font-weight:500;color:var(--muted);font-size:11px;letter-spacing:.02em;margin-top:-1px}
-  .build{font-size:10.5px;color:var(--faint);border:1px solid var(--line);border-radius:20px;padding:3px 9px;font-weight:600;letter-spacing:.03em}
-  .spacer{flex:1}
-  .period{display:flex;background:var(--card);border:1px solid var(--line);border-radius:11px;padding:3px;gap:2px}
-  .period button{border:0;background:transparent;color:var(--muted);font-weight:600;font-size:12.5px;padding:7px 12px;border-radius:8px;white-space:nowrap}
-  .period button.on{background:var(--ink);color:#fff}
+  .logo small{display:block;font-weight:500;color:var(--muted);font-size:10.5px;margin-top:-1px}
+  .nav2{display:flex;flex-direction:column;gap:2px;margin-top:6px}
+  .nav2 .sec{font-size:10px;font-weight:700;letter-spacing:.09em;text-transform:uppercase;color:var(--faint);padding:14px 10px 6px}
+  .nav2 button{display:flex;align-items:center;gap:10px;border:0;background:transparent;color:var(--muted);font-weight:600;font-size:13.5px;padding:9px 10px;border-radius:9px;text-align:left;width:100%;position:relative}
+  .nav2 button:hover{background:var(--line-2);color:var(--ink)}
+  .nav2 button.on{background:var(--orange-soft);color:var(--orange-deep)}
+  .nav2 button.on:before{content:"";position:absolute;left:-12px;top:8px;bottom:8px;width:3px;background:var(--orange);border-radius:3px}
+  .nav2 svg{width:17px;height:17px;flex-shrink:0}
+  .side-foot{margin-top:auto;padding:10px 8px 2px;font-size:10.5px;color:var(--faint)}
+  .badge{display:inline-flex;align-items:center;gap:6px;border:1px solid var(--line);border-radius:20px;padding:4px 10px;font-weight:600;letter-spacing:.02em}
+  .badge .live{width:6px;height:6px;border-radius:50%;background:var(--faint)}
 
-  .nav{max-width:1240px;margin:0 auto;padding:0 22px;display:flex;gap:2px;overflow-x:auto}
-  .nav button{border:0;background:transparent;color:var(--muted);font-weight:600;font-size:14px;padding:14px 15px;position:relative;white-space:nowrap}
-  .nav button.on{color:var(--ink)}
-  .nav button.on:after{content:"";position:absolute;left:12px;right:12px;bottom:-1px;height:3px;background:var(--orange);border-radius:3px}
-
-  .wrap{max-width:1240px;margin:0 auto;padding:26px 22px 80px}
-  .subnav{display:flex;gap:7px;margin-bottom:22px;flex-wrap:wrap}
-  .subnav button{border:1px solid var(--line);background:var(--card);color:var(--muted);font-weight:600;font-size:13px;padding:8px 14px;border-radius:20px}
-  .subnav button.on{background:var(--orange-soft);border-color:var(--orange-line);color:var(--orange)}
-
-  /* type */
+  .main{flex:1;min-width:0;padding:24px 28px 80px;max-width:1180px}
+  .page-head{display:flex;align-items:flex-start;justify-content:space-between;gap:14px;margin-bottom:20px;flex-wrap:wrap}
   h1{font-size:22px;font-weight:700;letter-spacing:-.02em;margin:0 0 3px}
-  .sub{color:var(--muted);font-size:13.5px;margin:0 0 22px}
+  .sub{color:var(--muted);font-size:13.5px;margin:0}
   .eyebrow{font-size:11px;font-weight:700;letter-spacing:.09em;text-transform:uppercase;color:var(--faint)}
   h2{font-size:15px;font-weight:700;letter-spacing:-.01em;margin:0 0 2px}
+  h3{font-size:14px;font-weight:700;margin:0}
 
-  /* cards */
+  /* ---- period picker ---- */
+  .periodbtn{display:inline-flex;align-items:center;gap:8px;background:var(--card);border:1px solid var(--line);border-radius:11px;padding:9px 13px;font-size:13px;font-weight:600;color:var(--ink);position:relative}
+  .periodbtn svg{width:15px;height:15px;color:var(--orange)}
+  .pop{position:absolute;top:calc(100% + 6px);right:0;background:var(--card);border:1px solid var(--line);border-radius:12px;box-shadow:0 10px 30px rgba(26,21,18,.14);padding:6px;z-index:50;min-width:200px}
+  .pop button{display:block;width:100%;text-align:left;border:0;background:transparent;padding:9px 11px;border-radius:8px;font-size:13px;font-weight:600;color:var(--muted)}
+  .pop button:hover{background:var(--line-2);color:var(--ink)}
+  .pop button.on{background:var(--orange-soft);color:var(--orange-deep)}
+  .pop .lab{font-size:10px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--faint);padding:8px 11px 3px}
+
+  /* ---- cards / grid ---- */
   .card{background:var(--card);border:1px solid var(--line);border-radius:var(--r);box-shadow:var(--shadow)}
   .pad{padding:18px}
   .grid{display:grid;gap:14px}
   .row{display:flex;gap:14px;flex-wrap:wrap}
 
   .chip{display:inline-flex;align-items:center;gap:5px;font-size:11.5px;font-weight:600;padding:3px 9px;border-radius:20px;background:var(--line-2);color:var(--muted);border:1px solid var(--line);white-space:nowrap}
-  .chip.dog{background:var(--orange-soft);color:#C4531A;border-color:var(--orange-line)}
+  .chip.dog{background:var(--orange-soft);color:var(--orange-deep);border-color:var(--orange-line)}
   .chip.cat{background:var(--teal-soft);color:var(--teal);border-color:#BFE6E1}
   .chip.life{background:#F0ECFB;color:#6B54B8;border-color:#DED3F5}
   .chip.food{background:#EAF3EC;color:#2E7D4F;border-color:#CFE6D6}
@@ -111,107 +96,134 @@
   .chip.offer{background:var(--ink);color:#fff;border-color:var(--ink)}
   .chip.p3{background:#EEF1F4;color:#556;border-color:#DDE3E9}
   .chip.mov{background:var(--good-soft);color:var(--good);border-color:#C6E9D6}
+  .chip.wa{background:#E7F3EC;color:#1c7a4f;border-color:#C9E7D5}
+  .chip.pn{background:#EAF0FB;color:#3159a8;border-color:#CFDCF3}
+  .chip.em{background:#FBEFE6;color:#a3561f;border-color:#F2D8C2}
 
   .delta{font-weight:700;font-size:12.5px}
   .delta.up{color:var(--good)} .delta.down{color:var(--bad)} .delta.flat{color:var(--muted)}
 
-  /* catalog */
-  .tiles{display:grid;grid-template-columns:repeat(auto-fill,minmax(206px,1fr));gap:14px}
-  .tile{background:var(--card);border:1px solid var(--line);border-radius:var(--r);overflow:hidden;box-shadow:var(--shadow);cursor:pointer;transition:transform .12s,box-shadow .12s}
-  .tile:hover{transform:translateY(-2px);box-shadow:0 8px 26px rgba(26,21,18,.10)}
-  .thumb{height:112px;display:grid;place-items:center;font-weight:800;font-size:30px;color:#fff;letter-spacing:-.02em;position:relative}
-  .thumb .own{position:absolute;top:8px;right:8px}
-  .tile-b{padding:12px 13px 14px}
-  .tile-b .nm{font-weight:700;font-size:13.5px;letter-spacing:-.01em;line-height:1.25}
-  .tile-b .br{color:var(--muted);font-size:11.5px;font-weight:500;margin-top:1px}
-  .tile-meta{display:flex;gap:5px;flex-wrap:wrap;margin-top:10px}
-  .brandhdr{display:flex;align-items:baseline;gap:10px;margin:26px 0 12px}
-  .brandhdr h2{font-size:16px} .brandhdr .cnt{color:var(--faint);font-size:12px;font-weight:600}
-
-  /* drawer */
-  .scrim{position:fixed;inset:0;background:rgba(26,21,18,.34);z-index:60;display:flex;justify-content:flex-end}
-  .drawer{width:min(460px,94vw);background:var(--paper);height:100%;overflow:auto;box-shadow:-10px 0 40px rgba(0,0,0,.2)}
-  .drawer-top{height:130px;display:grid;place-items:center;color:#fff;font-weight:800;font-size:40px;position:relative}
-  .x{position:absolute;top:12px;right:12px;width:32px;height:32px;border-radius:9px;border:0;background:rgba(255,255,255,.9);font-size:16px;font-weight:700}
-  .kv{display:flex;justify-content:space-between;gap:14px;padding:10px 0;border-bottom:1px solid var(--line-2);font-size:13px}
-  .kv .k{color:var(--muted)} .kv .v{font-weight:600;text-align:right;max-width:60%;word-break:break-word}
-  .cohort{border:1px solid var(--line);border-radius:var(--r-sm);padding:12px 13px;margin-bottom:9px;background:var(--card)}
-  .cohort .cn{font-size:11px;font-weight:700;color:var(--orange);letter-spacing:.05em;text-transform:uppercase}
-  .cohort .tg{font-size:12.5px;color:var(--muted);margin:5px 0 8px;line-height:1.4}
-  .cohort .hk{font-weight:600;font-size:13.5px;line-height:1.35}
-
-  /* kpi */
-  .kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:14px}
+  .kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:14px}
   .kpi .lab{font-size:12px;color:var(--muted);font-weight:600}
-  .kpi .big{font-size:26px;font-weight:800;letter-spacing:-.02em;margin:6px 0 3px}
+  .kpi .big{font-size:25px;font-weight:800;letter-spacing:-.02em;margin:6px 0 3px}
   .kpi .cmp{font-size:11.5px;color:var(--faint);font-weight:500}
 
-  /* bars */
   .barrow{display:flex;align-items:center;gap:12px;margin:9px 0}
   .barrow .nm{width:150px;font-size:13px;font-weight:600;flex-shrink:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
   .bartrack{flex:1;height:22px;background:var(--line-2);border-radius:7px;overflow:hidden}
   .barfill{height:100%;border-radius:7px;display:flex;align-items:center;justify-content:flex-end;padding-right:8px;color:#fff;font-size:11px;font-weight:700}
   .barval{width:96px;text-align:right;font-size:13px;font-weight:700;flex-shrink:0}
-
-  .split{display:flex;height:34px;border-radius:9px;overflow:hidden;border:1px solid var(--line)}
-  .split div{display:grid;place-items:center;color:#fff;font-weight:700;font-size:13px}
+  .split-bar{display:flex;height:34px;border-radius:9px;overflow:hidden;border:1px solid var(--line)}
+  .split-bar div{display:grid;place-items:center;color:#fff;font-weight:700;font-size:13px}
   .target-note{font-size:12px;color:var(--muted);margin-top:8px}
 
-  /* table */
   table{width:100%;border-collapse:collapse}
   th{text-align:left;font-size:11px;letter-spacing:.05em;text-transform:uppercase;color:var(--faint);font-weight:700;padding:9px 10px;border-bottom:1px solid var(--line)}
   td{padding:11px 10px;border-bottom:1px solid var(--line-2);font-size:13px;vertical-align:middle}
   tr:last-child td{border-bottom:0}
   th.r,td.r{text-align:right}
+  tr.clickable{cursor:pointer} tr.clickable:hover td{background:var(--orange-soft)}
   .rank{width:26px;height:26px;border-radius:8px;background:var(--ink);color:#fff;display:grid;place-items:center;font-weight:800;font-size:12px}
-
-  /* verdict */
   .verdict{font-weight:700;font-size:11.5px;padding:3px 9px;border-radius:20px}
   .v-good{background:var(--good-soft);color:var(--good)} .v-watch{background:var(--warn-soft);color:var(--warn)} .v-bad{background:var(--bad-soft);color:var(--bad)}
 
-  /* strategy briefs */
-  .brief{border:1px solid var(--line);border-left:4px solid var(--orange);border-radius:var(--r-sm);padding:14px;background:var(--card)}
-  .brief.cat{border-left-color:var(--teal)}
-  .brief .bt{display:flex;justify-content:space-between;align-items:flex-start;gap:8px}
-  .brief h3{margin:0;font-size:14.5px;font-weight:700}
-  .brief .why{font-size:12px;color:var(--muted);margin:3px 0 0}
-  .brief .hkq{font-weight:600;font-size:14px;margin:11px 0 0;padding:9px 11px;background:var(--orange-soft);border-radius:8px;line-height:1.35}
-  .brief.cat .hkq{background:var(--teal-soft)}
-  .brief .rec{font-size:12px;margin-top:9px;display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+  /* ---- tiles ---- */
+  .tiles{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:14px}
+  .tile{background:var(--card);border:1px solid var(--line);border-radius:var(--r);overflow:hidden;box-shadow:var(--shadow);cursor:pointer;transition:transform .12s,box-shadow .12s}
+  .tile:hover{transform:translateY(-2px);box-shadow:0 8px 26px rgba(26,21,18,.10)}
+  .thumb{height:104px;display:grid;place-items:center;font-weight:800;font-size:28px;color:#fff;position:relative}
+  .thumb .own{position:absolute;top:8px;right:8px}
+  .tile-b{padding:11px 12px 13px}
+  .tile-b .nm{font-weight:700;font-size:13px;line-height:1.25}
+  .tile-b .br{color:var(--muted);font-size:11px;margin-top:1px}
+  .tile-meta{display:flex;gap:5px;flex-wrap:wrap;margin-top:9px}
+  .brandhdr{display:flex;align-items:baseline;gap:10px;margin:22px 0 11px}
+  .brandhdr .cnt{color:var(--faint);font-size:12px;font-weight:600}
 
-  /* calendar */
+  /* ---- drawer / modal ---- */
+  .scrim{position:fixed;inset:0;background:rgba(26,21,18,.36);z-index:60;display:flex;justify-content:flex-end}
+  .scrim.center{justify-content:center;align-items:flex-start;padding:40px 20px;overflow:auto}
+  .drawer{width:min(460px,94vw);background:var(--paper);height:100%;overflow:auto;box-shadow:-10px 0 40px rgba(0,0,0,.2)}
+  .modal{width:min(860px,96vw);background:var(--paper);border-radius:16px;box-shadow:0 20px 60px rgba(0,0,0,.3);overflow:hidden}
+  .modal-top{padding:18px 20px;background:var(--ink);color:#fff;display:flex;justify-content:space-between;align-items:center}
+  .x{width:32px;height:32px;border-radius:9px;border:0;background:rgba(255,255,255,.14);color:#fff;font-size:15px;font-weight:700}
+  .drawer .x{background:rgba(0,0,0,.06);color:var(--ink)}
+  .kv{display:flex;justify-content:space-between;gap:14px;padding:9px 0;border-bottom:1px solid var(--line-2);font-size:13px}
+  .kv .k{color:var(--muted)} .kv .v{font-weight:600;text-align:right}
+
+  /* ---- buttons / inputs ---- */
+  .btn{border:0;background:var(--orange);color:#fff;font-weight:700;font-size:13px;padding:10px 16px;border-radius:10px}
+  .btn:disabled{background:var(--faint);cursor:not-allowed}
+  .btn.ghost{background:var(--card);color:var(--ink);border:1px solid var(--line)}
+  .btn.dark{background:var(--ink)}
+  .btn.sm{padding:7px 12px;font-size:12.5px;border-radius:9px}
+  .inp{border:1px solid var(--line);background:var(--card);border-radius:9px;padding:9px 12px;font-size:13px;width:100%;color:var(--ink)}
+  .inp:focus{outline:none;border-color:var(--orange-line)}
+  .search{width:230px}
+  .toggle{display:inline-flex;align-items:center;gap:7px;border:1px solid var(--line);background:var(--card);border-radius:20px;padding:6px 12px;font-size:12.5px;font-weight:600;color:var(--muted);user-select:none;cursor:pointer}
+  .toggle.on{background:var(--ink);color:#fff;border-color:var(--ink)}
+  .pill-row{display:flex;gap:7px;flex-wrap:wrap;margin-bottom:14px;align-items:center}
+  .empty{text-align:center;color:var(--muted);padding:40px;font-size:13.5px}
+  .note{font-size:12px;color:var(--muted);line-height:1.5}
+
+  /* ---- guided brief ---- */
+  .field{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:15px 16px;margin-bottom:12px}
+  .field .q{font-size:14px;font-weight:700}
+  .field .q .req{color:var(--orange);margin-left:2px}
+  .field .q .opt{color:var(--faint);font-weight:600;font-size:11.5px;margin-left:6px}
+  .field .help{font-size:12px;color:var(--muted);margin:3px 0 11px;line-height:1.45}
+  .opts{display:flex;flex-wrap:wrap;gap:8px}
+  .opt{border:1px solid var(--line);background:var(--card);color:var(--ink);font-weight:600;font-size:12.5px;padding:8px 13px;border-radius:20px}
+  .opt:hover{border-color:var(--orange-line)}
+  .opt.on{background:var(--orange);color:#fff;border-color:var(--orange)}
+  .opt.more{color:var(--muted);border-style:dashed}
+  .brief-free{margin-top:9px}
+  .briefbar{position:sticky;bottom:0;background:linear-gradient(0deg,var(--paper) 70%,transparent);padding:14px 2px 4px;display:flex;align-items:center;gap:10px}
+  .req-note{font-size:12px;color:var(--muted);font-weight:600}
+
+  /* ---- calendar ---- */
+  .calwrap{display:block}
+  .calwrap.split{display:grid;grid-template-columns:1fr 1fr;gap:16px;align-items:start}
   .cal{display:grid;grid-template-columns:repeat(7,1fr);gap:6px}
-  .cal .dow{font-size:11px;font-weight:700;color:var(--faint);text-transform:uppercase;letter-spacing:.05em;text-align:center;padding:4px 0}
-  .day{min-height:92px;border:1px solid var(--line);border-radius:9px;padding:6px;background:var(--card);font-size:11px}
+  .cal .dow{font-size:10.5px;font-weight:700;color:var(--faint);text-transform:uppercase;letter-spacing:.05em;text-align:center;padding:4px 0}
+  .day{min-height:96px;border:1px solid var(--line);border-radius:9px;padding:6px;background:var(--card);font-size:11px;transition:border-color .1s}
   .day.empty{background:transparent;border:0}
+  .day.off{background:var(--line-2)}
+  .day.drop{border-color:var(--orange);border-style:dashed}
   .day .dn{font-weight:700;color:var(--muted);font-size:11px;margin-bottom:4px}
-  .send{font-size:10.5px;font-weight:600;padding:2px 5px;border-radius:5px;margin-bottom:3px;color:#fff;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .send{font-size:10.5px;font-weight:600;padding:3px 6px;border-radius:6px;margin-bottom:3px;color:#fff;cursor:pointer;display:flex;justify-content:space-between;gap:4px;align-items:center}
+  .send:hover{filter:brightness(1.06)}
+  .send.on{outline:2px solid var(--ink);outline-offset:1px}
   .send.wa{background:#25946b} .send.pn{background:#3b6fd4} .send.em{background:#b6602a}
+  .send .b{font-size:8px;opacity:.85}
+  .split .cal .day{min-height:74px}
+  .split .send{font-size:9.5px}
+  .brief-side{max-height:calc(100vh - 120px);overflow:auto;padding-right:2px}
   .legend{display:flex;gap:14px;flex-wrap:wrap;align-items:center;font-size:12px;color:var(--muted);margin-top:14px}
   .dot{width:10px;height:10px;border-radius:3px;display:inline-block;margin-right:5px;vertical-align:middle}
 
-  .toggle{display:inline-flex;align-items:center;gap:7px;border:1px solid var(--line);background:var(--card);border-radius:20px;padding:6px 12px;font-size:12.5px;font-weight:600;color:var(--muted);user-select:none}
-  .toggle.on{background:var(--ink);color:#fff;border-color:var(--ink)}
+  .drop-zone{border:2px dashed var(--orange-line);background:var(--orange-soft);border-radius:var(--r);padding:34px;text-align:center;cursor:pointer}
+  .drop-zone:hover{background:#FFE9DA}
+  .goal-inp{width:120px}
+  .toast{position:fixed;bottom:22px;left:50%;transform:translateX(-50%);background:var(--ink);color:#fff;padding:12px 18px;border-radius:12px;font-size:13px;font-weight:600;box-shadow:0 10px 30px rgba(0,0,0,.25);z-index:90}
+  .focus-row{display:flex;align-items:center;gap:12px;padding:11px 12px;border:1px solid var(--line);border-radius:10px;background:var(--card);margin-bottom:8px}
+  .check{width:20px;height:20px;border-radius:6px;border:2px solid var(--line);display:grid;place-items:center;cursor:pointer;flex-shrink:0}
+  .check.on{background:var(--orange);border-color:var(--orange);color:#fff}
+  .reason{font-size:12px;color:var(--muted);background:var(--line-2);border-radius:8px;padding:8px 11px;margin-top:8px;line-height:1.45}
 
-  .drop{border:2px dashed var(--orange-line);background:var(--orange-soft);border-radius:var(--r);padding:38px;text-align:center;cursor:pointer;transition:background .15s}
-  .drop:hover{background:#FFE9DA}
-  .drop .ic{font-size:34px}
-  .btn{border:0;background:var(--orange);color:#fff;font-weight:700;font-size:13px;padding:10px 16px;border-radius:10px}
-  .btn.ghost{background:var(--card);color:var(--ink);border:1px solid var(--line)}
-  .btn.dark{background:var(--ink)}
-  .note{font-size:12px;color:var(--muted);line-height:1.5}
-  .pill-row{display:flex;gap:7px;flex-wrap:wrap;margin-bottom:16px}
-  .search{border:1px solid var(--line);background:var(--card);border-radius:10px;padding:9px 13px;font-size:13px;font-family:inherit;width:230px;color:var(--ink)}
-  .search:focus{outline:none;border-color:var(--orange-line)}
-  .empty{text-align:center;color:var(--muted);padding:40px;font-size:13.5px}
-  @media(max-width:640px){.barrow .nm{width:96px}.wrap{padding:20px 14px 70px}.top-in{padding:10px 14px}.nav{padding:0 14px}}
+  @media(max-width:820px){
+    .side{position:fixed;z-index:70;transform:translateX(-100%);transition:transform .2s} .side.open{transform:none}
+    .main{padding:18px 14px 70px} .calwrap.split{grid-template-columns:1fr}
+    .menu-btn{display:inline-grid} .barrow .nm{width:100px}
+  }
+  .menu-btn{display:none;place-items:center;width:38px;height:38px;border-radius:10px;border:1px solid var(--line);background:var(--card);margin-bottom:14px}
 </style>
 </head>
 <body>
 <div id="root"></div>
 <script type="text/babel" data-presets="react">
 const { useState, useMemo, useRef, useEffect } = React;
-const BUILD = "STRAT-1.0.2";
+const BUILD = "STRAT-2.1.1";
 const USE_MOCK = true;                       // flip to false to pull live from the sales-api
 const API_BASE = "http://localhost:8787";    // sales-api origin (Node/Express -> MySQL)
 
@@ -447,510 +459,720 @@ function catChip(c){return <span className={"chip "+(c==="Food"?"food":c==="Trea
 const PERIODS = [{k:"lm",l:"Last month"},{k:"ly",l:"Same month LY"},{k:"tq",l:"This quarter"}];
 const cmpKey = p => p==="ly" ? "lm" : "ly"; // compare selected against this
 
-/* ============================ CATALOG ============================ */
-function Catalog(){
-  const [sp,setSp]=useState("All"); const [own,setOwn]=useState("All"); const [cat,setCat]=useState("All");
-  const [q,setQ]=useState(""); const [sel,setSel]=useState(null);
-  const filtered = CATALOG.filter(p=>
-    (sp==="All"||p.species===sp)&&(own==="All"||p.owner===own)&&(cat==="All"||p.category===cat)&&
-    (q===""||p.name.toLowerCase().includes(q.toLowerCase())||p.brand.toLowerCase().includes(q.toLowerCase()))
-  );
-  const groups = [];
-  filtered.forEach(p=>{const g=groups.find(x=>x.brand===p.brand&&x.species===p.species); if(g)g.items.push(p); else groups.push({brand:p.brand,species:p.species,items:[p]})});
-  const Pill=({v,cur,set,children})=><button className={"toggle "+(cur===v?"on":"")} onClick={()=>set(v)}>{children}</button>;
-  return <div>
-    <h1>Product catalog</h1>
-    <p className="sub">Every SKU as a tile with image + mapped attributes. HUFT-owned first, priority order, then 3P.</p>
-    <div className="pill-row">
-      <Pill v="All" cur={sp} set={setSp}>All species</Pill><Pill v="Dog" cur={sp} set={setSp}>🐕 Dog</Pill><Pill v="Cat" cur={sp} set={setSp}>🐈 Cat</Pill><Pill v="Lifestyle" cur={sp} set={setSp}>Lifestyle</Pill>
-    </div>
-    <div className="pill-row">
-      <Pill v="All" cur={own} set={setOwn}>All owners</Pill><Pill v="HUFT" cur={own} set={setOwn}>HUFT-owned</Pill><Pill v="3P" cur={own} set={setOwn}>3P</Pill>
-      <span style={{width:12}}/>
-      <Pill v="All" cur={cat} set={setCat}>All categories</Pill><Pill v="Food" cur={cat} set={setCat}>Food</Pill><Pill v="Treats" cur={cat} set={setCat}>Treats</Pill><Pill v="Lifestyle" cur={cat} set={setCat}>Lifestyle</Pill>
-      <span style={{flex:1}}/>
-      <input className="search" placeholder="Search product or brand…" value={q} onChange={e=>setQ(e.target.value)}/>
-    </div>
-    {groups.length===0 && <div className="empty">No products match these filters.</div>}
-    {groups.map(g=><div key={g.brand+g.species}>
-      <div className="brandhdr">{speciesChip(g.species)}<h2>{g.brand}</h2><span className="cnt">{g.items.length} SKU{g.items.length>1?"s":""}</span></div>
-      <div className="tiles">
-        {g.items.map(p=><div className="tile" key={p.id} onClick={()=>setSel(p)}>
-          <div className="thumb" style={{background:`linear-gradient(135deg, ${speciesColor(p.species)}, ${speciesColor(p.species)}cc)`}}>
-            {initials(p.name)}
-            <span className="own">{p.owner==="3P"?<span className="chip p3">3P</span>:<span className="chip" style={{background:"rgba(255,255,255,.9)",color:"#C4531A",border:0}}>HUFT</span>}</span>
-          </div>
-          <div className="tile-b">
-            <div className="nm">{p.name}</div>
-            <div className="br">{p.brand} · {p.sku}</div>
-            <div className="tile-meta">
-              {catChip(p.category)}
-              <span className="chip">{INR(p.price)}</span>
-              {p.price>=699 && <span className="chip mov">MOV ✓</span>}
-              {p.cohorts.length>0 && <span className="chip">{p.cohorts.length} cohort{p.cohorts.length>1?"s":""}</span>}
-              {p.cohorts.some(c=>c.offer) && <span className="chip offer">offer-led</span>}
-            </div>
-          </div>
-        </div>)}
-      </div>
-    </div>)}
-    {sel && <ProductDrawer p={sel} onClose={()=>setSel(null)}/>}
+/* ============================ icons ============================ */
+function Icon({n}){
+  const P={
+    dash:"M3 13h8V3H3v10zm0 8h8v-6H3v6zm10 0h8V11h-8v10zm0-18v6h8V3h-8z",
+    catalog:"M4 4h7v7H4V4zm9 0h7v7h-7V4zM4 13h7v7H4v-7zm9 0h7v7h-7v-7z",
+    perf:"M4 19V5m5 14V9m5 10v-6m5 6V7",
+    priority:"M12 2l2.4 7.4H22l-6 4.6 2.3 7.4-6.3-4.6L5.7 21 8 14 2 9.4h7.6L12 2z",
+    strategy:"M12 3v18M5 8l7-5 7 5M5 8v8l7 5 7-5V8",
+    calendar:"M7 3v3m10-3v3M4 8h16M5 5h14a1 1 0 011 1v13a1 1 0 01-1 1H5a1 1 0 01-1-1V6a1 1 0 011-1z",
+    import:"M12 3v12m0 0l-4-4m4 4l4-4M4 17v2a1 1 0 001 1h14a1 1 0 001-1v-2",
+    cal2:"M7 3v3m10-3v3M4 8h16M5 5h14a1 1 0 011 1v13a1 1 0 01-1 1H5a1 1 0 01-1-1V6a1 1 0 011-1z"
+  };
+  return <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d={P[n]}/></svg>;
+}
+
+/* ============================ shared helpers ============================ */
+const iso=(y,m,d)=>`${y}-${String(m+1).padStart(2,"0")}-${String(d).padStart(2,"0")}`;
+const daysInMonth=(y,m)=>new Date(y,m+1,0).getDate();
+const MONTHS=["January","February","March","April","May","June","July","August","September","October","November","December"];
+const fmtDate=s=>{const d=new Date(s);return d.getDate()+" "+MONTHS[d.getMonth()].slice(0,3)};
+function inferObjective(t){t=(t||"").toLowerCase();
+  if(t.includes("lapsed")||t.includes("win")||t.includes("not purchased")||t.includes("not bought"))return "Win-back / Reactivation";
+  if(t.includes("non-")||t.includes("haven't")||t.includes("first")||t.includes("new")||t.includes("upgrader")||t.includes("economy"))return "Conversion (first purchase)";
+  if(t.includes("existing")||t.includes("attach")||t.includes("cross")||t.includes("buyers"))return "Upsell / Cross-sell";
+  return "Retention / Loyalty";
+}
+function inferLifestage(t){t=(t||"").toLowerCase();
+  if(t.includes("lapsed"))return "Lapsed 60–90 days";
+  if(t.includes("replenish")||t.includes("daily")||t.includes("multi-dog"))return "Ran out / replenishment due";
+  if(t.includes("puppy")||t.includes("new"))return "New pet just adopted";
+  return "";
+}
+function inferPillar(objective,category){
+  const o=(objective||"").toLowerCase();
+  if(o.includes("win-back")||o.includes("retention"))return "Importance";
+  if(o.includes("conversion")||o.includes("first"))return "Trust";
+  if(o.includes("education"))return "Edutainment";
+  if(o.includes("seasonal"))return "Discovery";
+  return category==="Treats"?"Edutainment":"Importance";
+}
+function briefPayload(v){
+  const L=[];
+  L.push("CRM CREATIVE BRIEF — "+(v.product||"(product)"));
+  L.push("Mode: "+(v.mode||"—")+"  |  Channel: "+(v.channel||"—"));
+  L.push("Audience: "+(v.audience||"—"));
+  if(v.lifestage)L.push("Lifestage / moment: "+v.lifestage);
+  L.push("Objective: "+(v.objective||"—"));
+  L.push("Lead pillar: "+(v.pillar||"—"));
+  L.push("Offer: "+(v.offer||"None — brand/product story only"));
+  L.push("Angle / hook: "+(v.angle||"Derive from brief"));
+  L.push("One key message: "+(v.message||"—"));
+  if(v.links)L.push("References: "+v.links);
+  L.push("Go-live: "+(v.golive||"—"));
+  return L.join("\n");
+}
+const chFull={WA:"WhatsApp",PN:"Push notification",Email:"Email"};
+const chCls={WA:"wa",PN:"pn",Email:"em"};
+
+/* ============================ PERIOD PICKER ============================ */
+function PeriodPicker({period,setPeriod,options,label}){
+  const [open,setOpen]=useState(false);
+  const cur=(options||PERIODS).find(o=>o.k===period);
+  return <div style={{position:"relative"}}>
+    <button className="periodbtn" onClick={()=>setOpen(!open)}>
+      <Icon n="cal2"/>{label?label+": ":""}{cur?cur.l:"Select"} <span style={{color:"var(--faint)"}}>▾</span>
+    </button>
+    {open && <div className="pop" onMouseLeave={()=>setOpen(false)}>
+      <div className="lab">Analysis period</div>
+      {(options||PERIODS).map(o=><button key={o.k} className={period===o.k?"on":""} onClick={()=>{setPeriod(o.k);setOpen(false)}}>{o.l}</button>)}
+    </div>}
   </div>;
 }
 
-function ProductDrawer({p,onClose}){
-  const s = SALES.find(x=>x.id===p.id);
-  return <div className="scrim" onClick={onClose}>
-    <div className="drawer" onClick={e=>e.stopPropagation()}>
-      <div className="drawer-top" style={{background:`linear-gradient(135deg, ${speciesColor(p.species)}, ${speciesColor(p.species)}bb)`}}>
-        {initials(p.name)}<button className="x" onClick={onClose}>✕</button>
-      </div>
-      <div className="pad">
-        <div className="row" style={{gap:6,marginBottom:10}}>{speciesChip(p.species)}{catChip(p.category)}<span className={"chip "+(p.owner==="3P"?"p3":"")}>{p.owner}</span></div>
-        <h1 style={{fontSize:20}}>{p.name}</h1>
-        <p className="sub" style={{marginBottom:16}}>{p.brand}</p>
-        <div className="kv"><span className="k">Price (item_price)</span><span className="v">{INR(p.price)}</span></div>
-        <div className="kv"><span className="k">SKU (cookie_id)</span><span className="v">{p.sku}</span></div>
-        <div className="kv"><span className="k">Category (product.type)</span><span className="v">{p.category}</span></div>
-        <div className="kv"><span className="k">Brand (vendor)</span><span className="v">{p.brand}</span></div>
-        <div className="kv"><span className="k">Tags</span><span className="v">{p.tags.join(", ")}</span></div>
-        <div className="kv"><span className="k">MOV eligible (≥₹699)</span><span className="v">{p.price>=699?"Yes":"No"}</span></div>
-        {s && <div className="kv"><span className="k">Units — last month</span><span className="v">{s.lm.units.toLocaleString("en-IN")} · {K(s.lm.rev)}</span></div>}
-        <div className="eyebrow" style={{margin:"20px 0 10px"}}>Cohort briefs ({p.cohorts.length})</div>
-        {p.cohorts.length===0 && <div className="note">No cohort briefs defined yet — flagged in Strategy as an un-briefed SKU.</div>}
-        {p.cohorts.map(c=><div className="cohort" key={c.n}>
-          <div className="cn">Cohort {c.n} {c.offer&&<span className="chip offer" style={{marginLeft:6}}>offer-led</span>}</div>
-          <div className="tg">{c.target}</div>
-          <div className="hk">“{c.hook}”</div>
-        </div>)}
-      </div>
-    </div>
-  </div>;
-}
+/* ============================ DASHBOARD ============================ */
+function Dashboard({period,setPeriod}){
+  const cmp=cmpKey(period), cmpLabel=PERIODS.find(x=>x.k===cmp).l;
+  const tot=SALES.reduce((a,r)=>({rev:a.rev+P(r,period).rev,units:a.units+P(r,period).units}),{rev:0,units:0});
+  const totC=SALES.reduce((a,r)=>({rev:a.rev+P(r,cmp).rev,units:a.units+P(r,cmp).units}),{rev:0,units:0});
+  const orders=Math.round(tot.units/2.3), ordersC=Math.round(totC.units/2.3);
+  const aov=tot.rev/Math.max(1,orders);
+  const dRev=pct(tot.rev,totC.rev), dU=pct(tot.units,totC.units), dO=pct(orders,ordersC);
+  const dogPct=Math.round(SALES.filter(r=>r.species==="Dog").reduce((a,r)=>a+P(r,period).rev,0)/tot.rev*100);
+  const catPct=Math.round(SALES.filter(r=>r.species==="Cat").reduce((a,r)=>a+P(r,period).rev,0)/tot.rev*100);
+  const d2c=Math.round(SALES.reduce((a,r)=>a+P(r,period).rev*r.d2cShare,0)/tot.rev*100);
 
-/* ============================ SALES INSIGHTS ============================ */
-function SalesInsights({period}){
-  const cmp = cmpKey(period);
-  const tot = SALES.reduce((a,r)=>({rev:a.rev+P(r,period).rev, units:a.units+P(r,period).units}),{rev:0,units:0});
-  const totC = SALES.reduce((a,r)=>({rev:a.rev+P(r,cmp).rev, units:a.units+P(r,cmp).units}),{rev:0,units:0});
-  const orders = Math.round(tot.units/2.3), ordersC = Math.round(totC.units/2.3);
-  const aov = tot.rev/Math.max(1,orders), aovC = totC.rev/Math.max(1,ordersC);
-  const dRev=pct(tot.rev,totC.rev), dU=pct(tot.units,totC.units), dO=pct(orders,ordersC), dA=pct(aov,aovC);
-  const cmpLabel = PERIODS.find(x=>x.k===cmp).l;
+  const assets=ASSETS;
+  // asset performance against sales: revenue attributed to CRM vs total
+  const crmRev=assets.reduce((a,x)=>a+x.rev,0);
+  const crmShare=Math.round(crmRev/tot.rev*100);
+  // top performing audiences (group assets by audience)
+  const byAud={};
+  assets.forEach(a=>{const p=CATALOG.find(x=>x.id===a.pid)||{};const key=(p.cohorts&&p.cohorts[a.cohortN-1]?p.cohorts[a.cohortN-1].target:a.name)||a.name;
+    byAud[key]=byAud[key]||{aud:key,rev:0,conv:0,n:0,sent:0}; byAud[key].rev+=a.rev; byAud[key].conv+=a.conv; byAud[key].sent+=a.sent; byAud[key].n++;});
+  const topAud=Object.values(byAud).map(x=>({...x,conv:x.conv/x.n})).sort((a,b)=>b.rev-a.rev).slice(0,6);
 
-  const bySpecies = ["Dog","Cat","Lifestyle"].map(s=>({s,rev:SALES.filter(r=>r.species===s).reduce((a,r)=>a+P(r,period).rev,0)}));
-  const speciesTot = bySpecies.reduce((a,b)=>a+b.rev,0);
-  const dogPct = Math.round(bySpecies[0].rev/speciesTot*100), catPct=Math.round(bySpecies[1].rev/speciesTot*100), lifePct=100-dogPct-catPct;
-
-  const byCat = ["Food","Treats","Lifestyle"].map(c=>({c,rev:SALES.filter(r=>r.category===c).reduce((a,r)=>a+P(r,period).rev,0)}));
-  const catMax = Math.max(...byCat.map(x=>x.rev));
-
-  const top = [...SALES].sort((a,b)=>P(b,period).rev-P(a,period).rev).slice(0,8);
-  const d2cRev = SALES.reduce((a,r)=>a+P(r,period).rev*r.d2cShare,0);
-  const d2cPct = Math.round(d2cRev/tot.rev*100);
-
-  const Kpi=({lab,val,d})=><div className="card pad kpi">
-    <div className="lab">{lab}</div><div className="big">{val}</div>
-    <div className="cmp"><span className={"delta "+d.cls}>{d.t}</span> vs {cmpLabel}</div>
-  </div>;
-
+  const Kpi=({lab,val,d})=><div className="card pad kpi"><div className="lab">{lab}</div><div className="big">{val}</div><div className="cmp"><span className={"delta "+d.cls}>{d.t}</span> vs {cmpLabel}</div></div>;
   return <div>
-    <div className="kpis" style={{marginBottom:16}}>
+    <div className="page-head">
+      <div><h1>Dashboard</h1><p className="sub">Sales, CRM asset performance against sales, and your top-performing audiences.</p></div>
+      <PeriodPicker period={period} setPeriod={setPeriod}/>
+    </div>
+    <div className="kpis" style={{marginBottom:14}}>
       <Kpi lab="Revenue" val={K(tot.rev)} d={dRev}/>
       <Kpi lab="Orders" val={orders.toLocaleString("en-IN")} d={dO}/>
       <Kpi lab="Units" val={tot.units.toLocaleString("en-IN")} d={dU}/>
-      <Kpi lab="AOV" val={INR(aov)} d={dA}/>
+      <Kpi lab="AOV" val={INR(aov)} d={pct(aov, totC.rev/Math.max(1,ordersC))}/>
     </div>
     <div className="row" style={{alignItems:"stretch"}}>
-      <div className="card pad" style={{flex:"1 1 340px"}}>
-        <div className="eyebrow">Dog vs Cat mix</div><h2 style={{marginTop:4}}>Revenue share this period</h2>
-        <div className="split" style={{marginTop:14}}>
-          <div style={{width:dogPct+"%",background:"#FF6D1F"}}>{dogPct>8?`Dog ${dogPct}%`:""}</div>
-          <div style={{width:catPct+"%",background:"#0E8C82"}}>{catPct>8?`Cat ${catPct}%`:""}</div>
-          <div style={{width:lifePct+"%",background:"#6B54B8"}}>{lifePct>8?`${lifePct}%`:""}</div>
-        </div>
-        <div className="target-note">Strategy target is <b>Dog 60 / Cat 40</b>. Current Dog {dogPct}% · Cat {catPct}% {dogPct>62?"— dog over-indexed, rebalance toward cat.":dogPct<58?"— dog under target, push priority dog SKUs.":"— on target."}</div>
-      </div>
       <div className="card pad" style={{flex:"1 1 300px"}}>
-        <div className="eyebrow">Channel</div><h2 style={{marginTop:4}}>D2C vs Retail</h2>
-        <div className="split" style={{marginTop:14}}>
-          <div style={{width:d2cPct+"%",background:"#1A1512"}}>D2C {d2cPct}%</div>
-          <div style={{width:(100-d2cPct)+"%",background:"#B7ADA4"}}>Retail {100-d2cPct}%</div>
+        <div className="eyebrow">CRM asset performance vs sales</div><h2 style={{marginTop:4}}>Revenue touched by CRM</h2>
+        <div className="split-bar" style={{marginTop:14}}>
+          <div style={{width:crmShare+"%",background:"var(--orange)"}}>CRM {crmShare}%</div>
+          <div style={{width:(100-crmShare)+"%",background:"var(--faint)"}}>Organic {100-crmShare}%</div>
         </div>
-        <div className="target-note">Channel derived from order payload <code>Channel</code> field. Retail split feeds the calendar D2C/Retail filter.</div>
+        <div className="target-note">{K(crmRev)} of {K(tot.rev)} revenue came from campaigns that ran this period, across {assets.length} sends.</div>
+      </div>
+      <div className="card pad" style={{flex:"1 1 240px"}}>
+        <div className="eyebrow">Type</div><h2 style={{marginTop:4}}>D2C vs Retail</h2>
+        <div className="split-bar" style={{marginTop:14}}><div style={{width:d2c+"%",background:"var(--ink)"}}>D2C {d2c}%</div><div style={{width:(100-d2c)+"%",background:"var(--faint)"}}>Retail {100-d2c}%</div></div>
+        <div className="target-note">Dog {dogPct}% · Cat {catPct}% — target Dog 60 / Cat 40.</div>
       </div>
     </div>
     <div className="card pad" style={{marginTop:14}}>
-      <div className="eyebrow">Category mix</div><h2 style={{marginTop:4,marginBottom:12}}>Revenue by category priority</h2>
-      {byCat.map((x,i)=><div className="barrow" key={x.c}>
-        <div className="nm">{i+1}. {x.c}</div>
-        <div className="bartrack"><div className="barfill" style={{width:Math.max(6,x.rev/catMax*100)+"%",background:i===0?"#FF6D1F":i===1?"#C77D12":"#6B54B8"}}></div></div>
-        <div className="barval">{K(x.rev)}</div>
-      </div>)}
+      <div className="eyebrow">Channel mix</div><h2 style={{marginTop:4,marginBottom:12}}>Sends by channel</h2>
+      {["WA","PN","Email"].map((c,i)=>{const rev=assets.filter(a=>a.ch===c).reduce((s,a)=>s+a.rev,0);const mx=Math.max(...["WA","PN","Email"].map(cc=>assets.filter(a=>a.ch===cc).reduce((s,a)=>s+a.rev,0)));
+        return <div className="barrow" key={c}><div className="nm">{chFull[c]}</div><div className="bartrack"><div className="barfill" style={{width:Math.max(6,rev/mx*100)+"%",background:i===0?"#25946b":i===1?"#3b6fd4":"#b6602a"}}></div></div><div className="barval">{K(rev)}</div></div>;})}
     </div>
     <div className="card" style={{marginTop:14}}>
-      <div className="pad" style={{paddingBottom:6}}><div className="eyebrow">Leaderboard</div><h2 style={{marginTop:4}}>Top products · {PERIODS.find(x=>x.k===period).l}</h2></div>
+      <div className="pad" style={{paddingBottom:6}}><div className="eyebrow">Top performing audiences</div><h2 style={{marginTop:4}}>Ranked by revenue</h2></div>
       <div style={{padding:"0 8px 8px"}}><table>
-        <thead><tr><th>#</th><th>Product</th><th>Brand</th><th className="r">Units</th><th className="r">Revenue</th><th className="r">vs {cmpLabel}</th></tr></thead>
-        <tbody>{top.map((r,i)=>{const d=pct(P(r,period).rev,P(r,cmp).rev);return <tr key={r.id}>
+        <thead><tr><th>#</th><th>Audience</th><th className="r">Sends</th><th className="r">Avg conv</th><th className="r">Revenue</th></tr></thead>
+        <tbody>{topAud.map((a,i)=><tr key={i}><td><span className="rank">{i+1}</span></td><td style={{maxWidth:340}}>{a.aud}</td><td className="r">{a.n}</td><td className="r">{a.conv.toFixed(1)}%</td><td className="r"><b>{K(a.rev)}</b></td></tr>)}</tbody>
+      </table></div>
+    </div>
+  </div>;
+}
+
+/* ============================ CATALOG (editable) ============================ */
+function CatalogTab({catalog,setCatalog}){
+  const [sp,setSp]=useState("All"),[own,setOwn]=useState("All"),[q,setQ]=useState(""),[edit,setEdit]=useState(null),[view,setView]=useState(null);
+  const filtered=catalog.filter(p=>(sp==="All"||p.species===sp)&&(own==="All"||p.owner===own)&&(q===""||p.name.toLowerCase().includes(q.toLowerCase())||p.brand.toLowerCase().includes(q.toLowerCase())));
+  const groups=[]; filtered.forEach(p=>{const g=groups.find(x=>x.brand===p.brand&&x.species===p.species);if(g)g.items.push(p);else groups.push({brand:p.brand,species:p.species,items:[p]})});
+  const Pill=({v,cur,set,children})=><button className={"toggle "+(cur===v?"on":"")} onClick={()=>set(v)}>{children}</button>;
+  function addNew(){const id="new-"+Date.now();const p={id,name:"New product",brand:"New brand",species:"Dog",category:"Food",owner:"HUFT",price:699,sku:"NEW-SKU",tags:[],cohorts:[]};setCatalog([...catalog,p]);setEdit(p);}
+  return <div>
+    <div className="page-head">
+      <div><h1>Catalog</h1><p className="sub">Every SKU with image + attributes. Editable — click a tile to view, or edit to change attributes and cohorts.</p></div>
+      <button className="btn" onClick={addNew}>+ Add product</button>
+    </div>
+    <div className="pill-row">
+      <Pill v="All" cur={sp} set={setSp}>All species</Pill><Pill v="Dog" cur={sp} set={setSp}>Dog</Pill><Pill v="Cat" cur={sp} set={setSp}>Cat</Pill><Pill v="Lifestyle" cur={sp} set={setSp}>Lifestyle</Pill>
+      <span style={{width:10}}/><Pill v="All" cur={own} set={setOwn}>All</Pill><Pill v="HUFT" cur={own} set={setOwn}>HUFT</Pill><Pill v="3P" cur={own} set={setOwn}>3P</Pill>
+      <span style={{flex:1}}/><input className="inp search" placeholder="Search…" value={q} onChange={e=>setQ(e.target.value)}/>
+    </div>
+    {groups.map(g=><div key={g.brand+g.species}>
+      <div className="brandhdr">{speciesChip(g.species)}<h2>{g.brand}</h2><span className="cnt">{g.items.length} SKU{g.items.length>1?"s":""}</span></div>
+      <div className="tiles">{g.items.map(p=><div className="tile" key={p.id} onClick={()=>setView(p)}>
+        <div className="thumb" style={{background:`linear-gradient(135deg,${speciesColor(p.species)},${speciesColor(p.species)}cc)`}}>{initials(p.name)}
+          <span className="own">{p.owner==="3P"?<span className="chip p3">3P</span>:<span className="chip" style={{background:"rgba(255,255,255,.9)",color:"var(--orange-deep)",border:0}}>HUFT</span>}</span></div>
+        <div className="tile-b"><div className="nm">{p.name}</div><div className="br">{p.brand} · {p.sku}</div>
+          <div className="tile-meta">{catChip(p.category)}<span className="chip">{INR(p.price)}</span>{p.cohorts.length>0&&<span className="chip">{p.cohorts.length} cohort{p.cohorts.length>1?"s":""}</span>}
+            <button className="chip" style={{cursor:"pointer"}} onClick={e=>{e.stopPropagation();setEdit(p)}}>✎ edit</button></div>
+        </div>
+      </div>)}</div>
+    </div>)}
+    {view&&<ProductView p={view} onClose={()=>setView(null)} onEdit={()=>{setEdit(view);setView(null)}}/>}
+    {edit&&<EditDrawer p={edit} onClose={()=>setEdit(null)} onSave={np=>{setCatalog(catalog.map(x=>x.id===np.id?np:x));setEdit(null)}} onDelete={id=>{setCatalog(catalog.filter(x=>x.id!==id));setEdit(null)}}/>}
+  </div>;
+}
+function ProductView({p,onClose,onEdit}){
+  return <div className="scrim" onClick={onClose}><div className="drawer" onClick={e=>e.stopPropagation()}>
+    <div className="thumb" style={{height:130,background:`linear-gradient(135deg,${speciesColor(p.species)},${speciesColor(p.species)}bb)`,fontSize:40}}>{initials(p.name)}<button className="x" style={{position:"absolute",top:12,right:12}} onClick={onClose}>✕</button></div>
+    <div className="pad">
+      <div className="row" style={{gap:6,marginBottom:10}}>{speciesChip(p.species)}{catChip(p.category)}<span className={"chip "+(p.owner==="3P"?"p3":"")}>{p.owner}</span></div>
+      <h1 style={{fontSize:20}}>{p.name}</h1><p className="sub" style={{marginBottom:14}}>{p.brand}</p>
+      <div className="kv"><span className="k">Price</span><span className="v">{INR(p.price)}</span></div>
+      <div className="kv"><span className="k">SKU</span><span className="v">{p.sku}</span></div>
+      <div className="kv"><span className="k">Tags</span><span className="v">{p.tags.join(", ")||"—"}</span></div>
+      <div className="eyebrow" style={{margin:"18px 0 10px"}}>Cohort briefs ({p.cohorts.length})</div>
+      {p.cohorts.map(c=><div className="reason" key={c.n} style={{marginBottom:8}}><b>Cohort {c.n}{c.offer?" · offer-led":""}</b><br/>{c.target}<br/><span style={{color:"var(--ink)",fontWeight:600}}>“{c.hook}”</span></div>)}
+      <button className="btn" style={{marginTop:12}} onClick={onEdit}>Edit this product</button>
+    </div>
+  </div></div>;
+}
+function EditDrawer({p,onClose,onSave,onDelete}){
+  const [d,setD]=useState(JSON.parse(JSON.stringify(p)));
+  const set=(k,v)=>setD({...d,[k]:v});
+  const setCoh=(i,k,v)=>{const c=[...d.cohorts];c[i]={...c[i],[k]:v};setD({...d,cohorts:c})};
+  return <div className="scrim" onClick={onClose}><div className="drawer" onClick={e=>e.stopPropagation()}>
+    <div className="modal-top"><b>Edit product</b><button className="x" onClick={onClose}>✕</button></div>
+    <div className="pad">
+      <label className="note">Name</label><input className="inp" style={{margin:"4px 0 12px"}} value={d.name} onChange={e=>set("name",e.target.value)}/>
+      <div className="row" style={{gap:10}}>
+        <div style={{flex:1}}><label className="note">Brand</label><input className="inp" style={{margin:"4px 0 12px"}} value={d.brand} onChange={e=>set("brand",e.target.value)}/></div>
+        <div style={{width:120}}><label className="note">Price ₹</label><input className="inp" type="number" style={{margin:"4px 0 12px"}} value={d.price} onChange={e=>set("price",+e.target.value)}/></div>
+      </div>
+      <div className="row" style={{gap:10}}>
+        <div style={{flex:1}}><label className="note">Species</label><select className="inp" style={{margin:"4px 0 12px"}} value={d.species} onChange={e=>set("species",e.target.value)}><option>Dog</option><option>Cat</option><option>Lifestyle</option></select></div>
+        <div style={{flex:1}}><label className="note">Category</label><select className="inp" style={{margin:"4px 0 12px"}} value={d.category} onChange={e=>set("category",e.target.value)}><option>Food</option><option>Treats</option><option>Lifestyle</option></select></div>
+        <div style={{flex:1}}><label className="note">Owner</label><select className="inp" style={{margin:"4px 0 12px"}} value={d.owner} onChange={e=>set("owner",e.target.value)}><option>HUFT</option><option>3P</option></select></div>
+      </div>
+      <label className="note">SKU</label><input className="inp" style={{margin:"4px 0 16px"}} value={d.sku} onChange={e=>set("sku",e.target.value)}/>
+      <div className="eyebrow" style={{marginBottom:8}}>Cohorts</div>
+      {d.cohorts.map((c,i)=><div className="field" key={i} style={{padding:12}}>
+        <div className="row" style={{justifyContent:"space-between",alignItems:"center",marginBottom:8}}><b style={{fontSize:12.5}}>Cohort {c.n||i+1}</b>
+          <span><label className="note" style={{marginRight:6}}><input type="checkbox" checked={!!c.offer} onChange={e=>setCoh(i,"offer",e.target.checked)}/> offer-led</label>
+          <button className="chip" onClick={()=>setD({...d,cohorts:d.cohorts.filter((_,j)=>j!==i)})}>remove</button></span></div>
+        <input className="inp" style={{marginBottom:6}} placeholder="Target definition" value={c.target||""} onChange={e=>setCoh(i,"target",e.target.value)}/>
+        <input className="inp" placeholder="Hook / message" value={c.hook||""} onChange={e=>setCoh(i,"hook",e.target.value)}/>
+      </div>)}
+      <button className="btn ghost sm" onClick={()=>setD({...d,cohorts:[...d.cohorts,{n:d.cohorts.length+1,target:"",hook:"",offer:false}]})}>+ Add cohort</button>
+      <div className="row" style={{marginTop:18,justifyContent:"space-between"}}>
+        <button className="btn" onClick={()=>onSave(d)}>Save changes</button>
+        <button className="btn ghost sm" style={{color:"var(--bad)"}} onClick={()=>onDelete(d.id)}>Delete</button>
+      </div>
+    </div>
+  </div></div>;
+}
+
+/* ============================ SALES x PERFORMANCE ============================ */
+function SalesPerformance({period,setPeriod}){
+  const [drill,setDrill]=useState(null);
+  const top=[...SALES].sort((a,b)=>P(b,period).rev-P(a,period).rev).slice(0,10);
+  const assetOf=id=>ASSETS.filter(a=>a.pid===id);
+  return <div>
+    <div className="page-head">
+      <div><h1>Sales × Performance</h1><p className="sub">Top 10 by revenue. Click any row to see performance across periods and whether the CRM push moved it.</p></div>
+      <PeriodPicker period={period} setPeriod={setPeriod}/>
+    </div>
+    <div className="card"><div style={{padding:8}}><table>
+      <thead><tr><th>#</th><th>Product</th><th>Brand</th><th className="r">Units</th><th className="r">Revenue</th><th>CRM push</th><th></th></tr></thead>
+      <tbody>{top.map((r,i)=>{const as=assetOf(r.id);const ran=as.length>0;const good=as.some(a=>a.verdict==="good");
+        return <tr className="clickable" key={r.id} onClick={()=>setDrill(r)}>
           <td><span className="rank">{i+1}</span></td>
           <td><b>{r.name}</b> {speciesChip(r.species)}</td>
           <td style={{color:"var(--muted)"}}>{r.brand}</td>
           <td className="r">{P(r,period).units.toLocaleString("en-IN")}</td>
           <td className="r"><b>{K(P(r,period).rev)}</b></td>
-          <td className="r"><span className={"delta "+d.cls}>{d.t}</span></td>
-        </tr>})}</tbody>
-      </table></div>
-    </div>
+          <td>{ran?<span className={"verdict "+(good?"v-good":"v-watch")}>{as.length} send{as.length>1?"s":""}</span>:<span className="verdict v-bad">none</span>}</td>
+          <td style={{color:"var(--faint)"}}>→</td>
+        </tr>;})}</tbody>
+    </table></div></div>
+    {drill&&<DrillModal r={drill} onClose={()=>setDrill(null)}/>}
   </div>;
 }
-
-/* ============================ AUDIENCE COHORTS ============================ */
-function AudienceCohorts(){
-  const defined = CATALOG.filter(p=>p.cohorts.length>0);
-  const totalCohorts = defined.reduce((a,p)=>a+p.cohorts.length,0);
-  return <div>
-    <div className="card pad" style={{marginBottom:16,background:"linear-gradient(135deg,#FFF6EF,#FFFFFF)"}}>
-      <div className="eyebrow">Auto-suggested cohorts</div>
-      <h2 style={{marginTop:4}}>Built from 2–3 product combo-buys</h2>
-      <p className="note" style={{marginTop:4}}>Co-purchase affinity across the sales feed. Each suggestion names the group, its size, the lift over baseline, and the product to push next.</p>
-    </div>
-    <div className="grid" style={{gridTemplateColumns:"repeat(auto-fill,minmax(300px,1fr))"}}>
-      {AFFINITY.map((a,i)=>{const push=CATALOG.find(x=>x.id===a.push); return <div className="card pad" key={i}>
-        <div className="row" style={{justifyContent:"space-between",alignItems:"flex-start",gap:8}}>
-          <div><div className="eyebrow">Cohort {String(i+1).padStart(2,"0")}</div><h2 style={{marginTop:3}}>{a.name}</h2></div>
-          <span className="chip mov">×{a.lift} lift</span>
+function DrillModal({r,onClose}){
+  const mtd={units:Math.round(r.lm.units*0.42),rev:Math.round(r.lm.rev*0.42)};
+  const cols=[{k:"MTD",v:mtd},{k:"Last month",v:r.lm},{k:"This quarter",v:r.tq},{k:"Same month LY",v:r.ly}];
+  const as=ASSETS.filter(a=>a.pid===r.id);
+  const good=as.filter(a=>a.verdict==="good"), bad=as.filter(a=>a.verdict==="bad");
+  const lift=as.length? Math.round((r.lm.rev/Math.max(1,r.ly.rev)-1)*100):null;
+  const helped= as.length && good.length>=bad.length && (lift===null||lift> -5);
+  const prod=CATALOG.find(x=>x.id===r.id)||r;
+  return <div className="scrim center" onClick={onClose}><div className="modal" onClick={e=>e.stopPropagation()}>
+    <div className="modal-top"><div><div className="eyebrow" style={{color:"#ffd9c2"}}>Sales × performance</div><b style={{fontSize:17}}>{r.name}</b></div><button className="x" onClick={onClose}>✕</button></div>
+    <div className="pad" style={{background:"var(--paper)"}}>
+      <div className="eyebrow" style={{marginBottom:8}}>Performance across periods</div>
+      <div className="card"><div style={{padding:6}}><table>
+        <thead><tr><th>Period</th><th className="r">Units</th><th className="r">Revenue</th></tr></thead>
+        <tbody>{cols.map(c=><tr key={c.k}><td><b>{c.k}</b></td><td className="r">{c.v.units.toLocaleString("en-IN")}</td><td className="r"><b>{K(c.v.rev)}</b></td></tr>)}</tbody>
+      </table></div></div>
+      <div className="card pad" style={{marginTop:12,borderLeft:"4px solid "+(helped?"var(--good)":as.length?"var(--warn)":"var(--faint)")}}>
+        <div className="eyebrow">Did the CRM push help?</div>
+        <h3 style={{margin:"5px 0 6px"}}>{as.length===0?"No CRM push ran — opportunity":helped?"Yes — CRM push lifted this SKU":"Mixed — push under-delivered"}</h3>
+        <div className="note">{as.length===0
+          ? "This product sold on organic demand alone. A targeted push to a lapsed or cross-sell cohort is untapped upside."
+          : `${as.length} send${as.length>1?"s":""} ran. ${good.length} worked, ${bad.length} underperformed. Revenue is ${lift>=0?"up "+lift+"%":"down "+Math.abs(lift)+"%"} vs the same month last year — ${helped?"consistent with the push driving incremental volume.":"the push isn't clearly moving the needle; rework the hook or cohort."}`}</div>
+      </div>
+      <div className="row" style={{marginTop:12,alignItems:"stretch"}}>
+        <div className="card pad" style={{flex:"1 1 260px"}}>
+          <div className="eyebrow" style={{color:"var(--good)"}}>What worked · cohorts</div>
+          {good.length===0&&<div className="note" style={{marginTop:6}}>No standout cohort yet.</div>}
+          {good.map(a=><div className="reason" key={a.id} style={{marginTop:8}}><b>Cohort {a.cohortN}</b> · {a.ch}/{a.aud} — CTR {a.ctr.toFixed(1)}%, conv {a.conv.toFixed(1)}%<br/>{a.hook}</div>)}
         </div>
-        <div className="row" style={{gap:6,margin:"10px 0"}}>{a.items.map(id=>{const it=CATALOG.find(x=>x.id===id);return <span className="chip" key={id}>{it?it.name:id}</span>})}</div>
-        <div className="note">{a.why}</div>
-        <div className="row" style={{justifyContent:"space-between",alignItems:"center",marginTop:12,paddingTop:12,borderTop:"1px solid var(--line-2)"}}>
-          <span style={{fontSize:13}}><b>{a.size.toLocaleString("en-IN")}</b> <span style={{color:"var(--muted)"}}>customers</span></span>
-          <span style={{fontSize:12.5}}>Push → <b>{push?push.name:a.push}</b></span>
+        <div className="card pad" style={{flex:"1 1 260px"}}>
+          <div className="eyebrow" style={{color:"var(--bad)"}}>What didn't · cohorts</div>
+          {bad.length===0&&<div className="note" style={{marginTop:6}}>Nothing flagged failing.</div>}
+          {bad.map(a=><div className="reason" key={a.id} style={{marginTop:8}}><b>Cohort {a.cohortN}</b> · {a.ch}/{a.aud} — CTR {a.ctr.toFixed(1)}%, conv {a.conv.toFixed(1)}%<br/>{a.offer?"offer didn't convert — try a new angle":"add an offer or switch cohort"}</div>)}
         </div>
-      </div>})}
+      </div>
     </div>
-    <div className="card pad" style={{marginTop:18}}>
-      <div className="eyebrow">Defined audience groups</div>
-      <h2 style={{marginTop:4,marginBottom:2}}>{totalCohorts} briefed cohorts across {defined.length} SKUs</h2>
-      <p className="note" style={{marginBottom:14}}>These are the hand-defined cohorts from the brief grid — the targeting definitions Strategy draws from.</p>
-      <table>
-        <thead><tr><th>Product</th><th>Cohort 1</th><th>Cohort 2</th><th>Cohort 3</th></tr></thead>
-        <tbody>{defined.map(p=><tr key={p.id}>
-          <td><b>{p.name}</b><br/><span style={{color:"var(--muted)",fontSize:11.5}}>{p.brand}</span></td>
-          {[0,1,2].map(i=><td key={i} style={{fontSize:12,color:"var(--muted)",maxWidth:220}}>{p.cohorts[i]?p.cohorts[i].target:"—"}</td>)}
-        </tr>)}</tbody>
-      </table>
-    </div>
-  </div>;
+  </div></div>;
 }
 
 /* ============================ PRIORITIES ============================ */
-const CAT_WEIGHT = {Food:3, Treats:2, Lifestyle:1};
-const SPECIES_WEIGHT = {Dog:0.60, Cat:0.40, Lifestyle:0.15};
-function priorityScore(row,period){
-  const rev = P(row,period).rev;
-  const revScore = Math.log10(rev+10);                 // dampen scale
-  const briefReady = row.cohorts.length? 1.2 : 0.6;
-  return revScore * CAT_WEIGHT[row.category] * (SPECIES_WEIGHT[row.species]||0.15) * briefReady * (row.owner==="HUFT"?1.15:0.8);
-}
-function Priorities({period}){
-  const ranked = [...SALES].filter(r=>r.owner==="HUFT").map(r=>({...r,score:priorityScore(r,period)})).sort((a,b)=>b.score-a.score).slice(0,14);
+function halfLabel(fp){return MONTHS[fp.month]+" "+fp.year+" · "+(fp.half==="H1"?"1st half (1–15)":"2nd half (16–"+daysInMonth(fp.year,fp.month)+")")}
+function Priorities({catalog,focus,setFocus,fp,setFp}){
+  const [popOpen,setPop]=useState(false);
+  const ranked=[...SALES].filter(r=>r.owner==="HUFT"&&r.cohorts.length>0)
+    .map(r=>({...r,score:Math.log10(P(r,"lm").rev+10)*(r.category==="Food"?3:r.category==="Treats"?2:1)*(r.species==="Dog"?0.6:0.4)}))
+    .sort((a,b)=>b.score-a.score).slice(0,14);
+  const isOn=id=>focus.some(f=>f.pid===id);
+  const goalOf=id=>{const f=focus.find(x=>x.pid===id);return f?f.goal:""};
+  function toggle(id){ if(isOn(id)) setFocus(focus.filter(f=>f.pid!==id)); else setFocus([...focus,{pid:id,goal:Math.round(P(SALES.find(s=>s.id===id),"lm").rev*1.15/1000)*1000}]); }
+  function setGoal(id,v){ setFocus(focus.map(f=>f.pid===id?{...f,goal:+v||0}:f)); }
+  const totalGoal=focus.reduce((a,f)=>a+(f.goal||0),0);
   return <div>
-    <div className="card pad" style={{marginBottom:16}}>
-      <div className="eyebrow">Prioritisation rules</div><h2 style={{marginTop:4,marginBottom:10}}>What ranks a SKU</h2>
-      <div className="row" style={{gap:8}}>
-        <span className="chip dog">Dog 60%</span><span className="chip cat">Cat 40%</span>
-        <span className="chip food">1. Food</span><span className="chip treats">2. Treats</span><span className="chip life">3. Lifestyle</span>
-        <span className="chip mov">MOV ₹699</span><span className="chip">Brief-ready boost</span><span className="chip">HUFT-owned boost</span>
+    <div className="page-head">
+      <div><h1>Set priorities</h1><p className="sub">Pick the SKUs in focus for this period and set a revenue goal for each.</p></div>
+      <div style={{position:"relative"}}>
+        <button className="periodbtn" onClick={()=>setPop(!popOpen)}><Icon n="cal2"/>{halfLabel(fp)} ▾</button>
+        {popOpen&&<div className="pop" onMouseLeave={()=>setPop(false)} style={{minWidth:230}}>
+          <div className="lab">Month</div>
+          <div className="row" style={{gap:4,padding:"0 6px 6px"}}>
+            <button className="btn ghost sm" onClick={()=>setFp({...fp,month:(fp.month+11)%12,year:fp.month===0?fp.year-1:fp.year})}>‹</button>
+            <div style={{flex:1,textAlign:"center",fontWeight:700,alignSelf:"center"}}>{MONTHS[fp.month].slice(0,3)} {fp.year}</div>
+            <button className="btn ghost sm" onClick={()=>setFp({...fp,month:(fp.month+1)%12,year:fp.month===11?fp.year+1:fp.year})}>›</button>
+          </div>
+          <div className="lab">Fortnight</div>
+          <button className={fp.half==="H1"?"on":""} onClick={()=>setFp({...fp,half:"H1"})}>1st half (1–15)</button>
+          <button className={fp.half==="H2"?"on":""} onClick={()=>setFp({...fp,half:"H2"})}>2nd half (16–end)</button>
+        </div>}
       </div>
-      <p className="note" style={{marginTop:10}}>Rank = revenue (log) × category weight (Food 3 / Treats 2 / Lifestyle 1) × species weight (Dog .60 / Cat .40) × brief-readiness × ownership. Un-briefed SKUs are penalised so Strategy surfaces the gap.</p>
     </div>
-    <div className="card">
-      <div className="pad" style={{paddingBottom:6}}><h2>Priority order · {PERIODS.find(x=>x.k===period).l}</h2></div>
-      <div style={{padding:"0 8px 8px"}}><table>
-        <thead><tr><th>#</th><th>Product</th><th>Species</th><th>Category</th><th className="r">Revenue</th><th>Readiness</th></tr></thead>
-        <tbody>{ranked.map((r,i)=><tr key={r.id}>
-          <td><span className="rank">{i+1}</span></td>
-          <td><b>{r.name}</b> <span style={{color:"var(--muted)",fontSize:11.5}}>· {r.brand}</span></td>
-          <td>{speciesChip(r.species)}</td>
-          <td>{catChip(r.category)}</td>
-          <td className="r"><b>{K(P(r,period).rev)}</b></td>
-          <td>{r.cohorts.length? <span className="verdict v-good">{r.cohorts.length} briefs</span> : <span className="verdict v-bad">un-briefed</span>}</td>
-        </tr>)}</tbody>
-      </table></div>
+    <div className="card pad" style={{marginBottom:16,display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:10}}>
+      <div><div className="eyebrow">Focus set</div><h2 style={{marginTop:3}}>{focus.length} products · {halfLabel(fp)}</h2></div>
+      <div style={{textAlign:"right"}}><div className="eyebrow">Combined revenue goal</div><div style={{fontSize:22,fontWeight:800}}>{INR(totalGoal)}</div></div>
     </div>
+    <div className="eyebrow" style={{marginBottom:10}}>Suggested focus (ranked by revenue × priority)</div>
+    {ranked.map(r=><div className="focus-row" key={r.id}>
+      <div className={"check "+(isOn(r.id)?"on":"")} onClick={()=>toggle(r.id)}>{isOn(r.id)?"✓":""}</div>
+      <div style={{flex:1,minWidth:0}}><b style={{fontSize:13.5}}>{r.name}</b> {speciesChip(r.species)} {catChip(r.category)}<div className="note">Last month {K(P(r,"lm").rev)} · {r.cohorts.length} cohorts ready</div></div>
+      <div style={{textAlign:"right"}}><div className="note" style={{marginBottom:2}}>Revenue goal</div>
+        <input className="inp goal-inp" type="number" disabled={!isOn(r.id)} value={goalOf(r.id)} onChange={e=>setGoal(r.id,e.target.value)} placeholder="₹"/></div>
+    </div>)}
   </div>;
 }
 
 /* ============================ STRATEGY ============================ */
-function buildPlan(period, assets){
-  // rank HUFT SKUs, respect Dog 60 / Cat 40 and category priority, prefer offer-led cohorts, fold in retrospective
-  const perf = {}; assets.forEach(a=>{perf[a.pid]=perf[a.pid]||[]; perf[a.pid].push(a)});
-  const pool = SALES.filter(r=>r.owner==="HUFT"&&r.cohorts.length>0).map(r=>({...r,score:priorityScore(r,period)})).sort((a,b)=>b.score-a.score);
-  const target = {Dog:6, Cat:4};                       // 60/40 across a 10-slot plan
-  const picked = {Dog:0, Cat:0}; const plan=[];
-  const catOrder={Food:0,Treats:1,Lifestyle:2};
-  pool.sort((a,b)=> (catOrder[a.category]-catOrder[b.category]) || (b.score-a.score));
-  for(const r of pool){
-    if(r.species==="Lifestyle") continue;
-    if(picked[r.species]>=target[r.species]) continue;
-    const past = perf[r.id];
-    const worked = past && past.some(x=>x.verdict==="good");
-    const failed = past && past.every(x=>x.verdict==="bad");
-    // choose cohort: repeat a winner, otherwise prefer offer-led, else cohort 1
-    let cohort;
-    if(worked){ const w=past.find(x=>x.verdict==="good"); cohort=r.cohorts[w.cohortN-1]||r.cohorts[0]; }
-    else { cohort = r.cohorts.find(c=>c.offer) || r.cohorts[0]; }
-    plan.push({...r, cohort, worked, failed, past});
-    picked[r.species]++;
-    if(picked.Dog>=target.Dog&&picked.Cat>=target.Cat) break;
-  }
-  return plan;
+function seasonalNote(month){
+  const m=["New-year reset & resolutions","Winter coat & joint care","Spring shedding & grooming","Summer hydration & cooling","Pre-monsoon stock-up","Monsoon paw & skin care","Monsoon indoor enrichment","Independence-day & festive ramp","Festive gifting build-up","Diwali peak — gifting & premiumisation","Post-festive winter feeding","Year-end loyalty & clearance"];
+  return m[month];
 }
-function Strategy({period}){
-  const assets = ASSETS;
-  const plan = useMemo(()=>buildPlan(period,assets),[period,assets]);
-  const wins = assets.filter(a=>a.verdict==="good").sort((a,b)=>b.rev-a.rev);
-  const flops = assets.filter(a=>a.verdict==="bad").sort((a,b)=>a.conv-b.conv);
-  return <div>
-    <h1>Strategy</h1>
-    <p className="sub">Data-driven monthly plan. Respects the split + category priority, prefers offer-led cohorts, and folds in what worked last month.</p>
-
-    <div className="card pad" style={{marginBottom:18}}>
-      <div className="eyebrow">Standing rules</div><h2 style={{marginTop:4,marginBottom:10}}>Applied to every plan</h2>
-      <div className="row" style={{gap:8}}>
-        <span className="chip dog">Dog 60%</span><span className="chip cat">Cat 40%</span>
-        <span className="chip mov">Min MOV ₹699</span><span className="chip offer">Discount / offer-led where flagged</span>
-      </div>
-      <div className="row" style={{gap:8,marginTop:8}}>
-        <span className="chip food">Priority 1 · Food</span><span className="chip treats">Priority 2 · Treats</span><span className="chip life">Priority 3 · Lifestyle</span>
-      </div>
-      <p className="note" style={{marginTop:10}}>Food sub-priority — <b>Edible-Dog:</b> SWF, Hearty (Kibble/Gravy), NutriWag (Wet/Dry) · <b>Edible-Cat:</b> Meowsi (Food/Treats), NutriMeow (Wet/Dry), Litter-Meowsi.</p>
-    </div>
-
-    <div className="row" style={{marginBottom:8}}>
-      <div className="eyebrow" style={{flex:1}}>This month's plan · {plan.filter(p=>p.species==="Dog").length} dog / {plan.filter(p=>p.species==="Cat").length} cat</div>
-    </div>
-    <div className="grid" style={{gridTemplateColumns:"repeat(auto-fill,minmax(320px,1fr))",marginBottom:22}}>
-      {plan.map((p,i)=><div className={"brief "+(p.species==="Cat"?"cat":"")} key={p.id}>
-        <div className="bt">
-          <div><h3>{i+1}. {p.name}</h3><div className="why">{p.brand} · Cohort {p.cohort.n}</div></div>
-          {speciesChip(p.species)}
-        </div>
-        <div className="why" style={{marginTop:8}}>{p.cohort.target}</div>
-        <div className="hkq">“{p.cohort.hook}”</div>
-        <div className="rec">
-          {catChip(p.category)}
-          {p.cohort.offer && <span className="chip offer">offer-led</span>}
-          {p.price>=699 && <span className="chip mov">MOV ✓</span>}
-          {p.worked && <span className="verdict v-good">↻ repeat winner</span>}
-          {p.failed && <span className="verdict v-watch">⚠ reworked hook</span>}
-        </div>
-      </div>)}
-    </div>
-
-    <div className="row" style={{alignItems:"stretch"}}>
-      <div className="card pad" style={{flex:"1 1 340px"}}>
-        <div className="eyebrow" style={{color:"var(--good)"}}>What worked</div><h2 style={{marginTop:4,marginBottom:10}}>Repeat these</h2>
-        {wins.length===0&&<div className="note">No clear winners in the current asset set.</div>}
-        {wins.map(a=><div key={a.id} style={{padding:"9px 0",borderBottom:"1px solid var(--line-2)"}}>
-          <div className="row" style={{justifyContent:"space-between",alignItems:"center"}}>
-            <b style={{fontSize:13.5}}>{a.name}</b><span className="verdict v-good">CTR {a.ctr.toFixed(1)}% · conv {a.conv.toFixed(1)}%</span>
-          </div>
-          <div className="note" style={{marginTop:3}}>{a.ch} · {a.aud} · cohort {a.cohortN} · {K(a.rev)}</div>
-        </div>)}
-      </div>
-      <div className="card pad" style={{flex:"1 1 340px"}}>
-        <div className="eyebrow" style={{color:"var(--bad)"}}>What didn't</div><h2 style={{marginTop:4,marginBottom:10}}>Rework or drop</h2>
-        {flops.length===0&&<div className="note">Nothing flagged as failing.</div>}
-        {flops.map(a=><div key={a.id} style={{padding:"9px 0",borderBottom:"1px solid var(--line-2)"}}>
-          <div className="row" style={{justifyContent:"space-between",alignItems:"center"}}>
-            <b style={{fontSize:13.5}}>{a.name}</b><span className="verdict v-bad">CTR {a.ctr.toFixed(1)}% · conv {a.conv.toFixed(1)}%</span>
-          </div>
-          <div className="note" style={{marginTop:3}}>{a.ch} · {a.aud} · cohort {a.cohortN} — {a.offer?"offer didn't move it, try a new angle":"add an offer or switch cohort"}</div>
-        </div>)}
-      </div>
-    </div>
-  </div>;
-}
-
-/* ============================ CALENDAR ============================ */
-function CrmCalendar(){
-  const [ch,setCh]=useState({WA:true,PN:true,Email:true});
-  const [aud,setAud]=useState("All"); // All|D2C|Retail
-  // July 2026 starts Wednesday (0=Sun) -> offset 3
-  const monthName="July 2026", days=31, offset=3;
-  const assets = ASSETS;
-  // schedule sends across the month deterministically
-  const sends=[]; assets.forEach((a,idx)=>{
-    const day=2+((idx*5+seed(a.id))%27);
-    const chan=a.ch; sends.push({day,chan,aud:a.aud,name:a.name,cohortN:a.cohortN});
-  });
-  // add a few extra to populate
-  SALES.filter(r=>r.owner==="HUFT"&&r.cohorts.length).slice(0,10).forEach((r,i)=>{
-    const day=1+((i*7+seed(r.id+"x"))%30); const chan=["WA","PN","Email"][seed(r.id+"c")%3];
-    sends.push({day,chan,aud: seed(r.id+"a")%3===0?"Retail":"D2C", name:r.name, cohortN:1});
-  });
-  const chKey={WA:"wa",PN:"pn",Email:"em"};
-  const visible=s=> ch[s.chan] && (aud==="All"||s.aud===aud);
-  const Tog=({k})=><span className={"toggle "+(ch[k]?"on":"")} onClick={()=>setCh({...ch,[k]:!ch[k]})}>
-    <span className="dot" style={{background:k==="WA"?"#25946b":k==="PN"?"#3b6fd4":"#b6602a"}}></span>{k}</span>;
-  const AudTog=({v})=><span className={"toggle "+(aud===v?"on":"")} onClick={()=>setAud(v)}>{v}</span>;
-  const cells=[]; for(let i=0;i<offset;i++)cells.push(null); for(let d=1;d<=days;d++)cells.push(d);
-  return <div>
-    <h1>CRM calendar</h1>
-    <p className="sub">Scheduled sends across WhatsApp, Push and Email — filter by channel and by D2C vs Retail.</p>
-    <div className="pill-row">
-      <Tog k="WA"/><Tog k="PN"/><Tog k="Email"/>
-      <span style={{width:12}}/><AudTog v="All"/><AudTog v="D2C"/><AudTog v="Retail"/>
-      <span style={{flex:1}}/><span className="note" style={{alignSelf:"center"}}>{monthName}</span>
-    </div>
-    <div className="card pad">
-      <div className="cal">
-        {["Sun","Mon","Tue","Wed","Thu","Fri","Sat"].map(d=><div className="dow" key={d}>{d}</div>)}
-        {cells.map((d,i)=> d===null? <div className="day empty" key={i}></div> :
-          <div className="day" key={i}>
-            <div className="dn">{d}</div>
-            {sends.filter(s=>s.day===d&&visible(s)).slice(0,4).map((s,j)=><div className={"send "+chKey[s.chan]} key={j} title={s.name+" · "+s.aud}>{s.name}</div>)}
-          </div>)}
-      </div>
-      <div className="legend">
-        <span><span className="dot" style={{background:"#25946b"}}></span>WhatsApp</span>
-        <span><span className="dot" style={{background:"#3b6fd4"}}></span>Push</span>
-        <span><span className="dot" style={{background:"#b6602a"}}></span>Email</span>
-        <span style={{flex:1}}/><span>{sends.filter(visible).length} sends shown</span>
-      </div>
-    </div>
-  </div>;
-}
-
-/* ============================ ASSETS ============================ */
-function Assets({extra}){
-  const assets = ASSETS;
-  const all=[...assets,...extra];
-  const [f,setF]=useState("All");
-  const shown=all.filter(a=>f==="All"||a.verdict===f);
-  const counts={good:all.filter(a=>a.verdict==="good").length,watch:all.filter(a=>a.verdict==="watch").length,bad:all.filter(a=>a.verdict==="bad").length};
-  const Vt=({v,l})=><span className={"toggle "+(f===v?"on":"")} onClick={()=>setF(v)}>{l}</span>;
-  return <div>
-    <h1>Last month's assets</h1>
-    <p className="sub">Every send that ran, with performance and a verdict — this is what feeds the "worked / didn't work" loop in Strategy.</p>
-    <div className="pill-row">
-      <Vt v="All" l={`All (${all.length})`}/><Vt v="good" l={`Worked (${counts.good})`}/><Vt v="watch" l={`Watch (${counts.watch})`}/><Vt v="bad" l={`Didn't (${counts.bad})`}/>
-    </div>
-    <div className="card"><div style={{padding:8}}><table>
-      <thead><tr><th>Product</th><th>Cohort / hook</th><th>Ch</th><th>Aud</th><th className="r">Sent</th><th className="r">CTR</th><th className="r">Conv</th><th className="r">Rev</th><th>Verdict</th></tr></thead>
-      <tbody>{shown.map(a=><tr key={a.id}>
-        <td><b>{a.name}</b> {a.species&&speciesChip(a.species)}</td>
-        <td style={{maxWidth:260}}><span style={{color:"var(--muted)",fontSize:11.5}}>Cohort {a.cohortN}</span><br/>{a.hook}</td>
-        <td>{a.ch}</td><td>{a.aud}</td>
-        <td className="r">{a.sent.toLocaleString("en-IN")}</td>
-        <td className="r">{a.ctr.toFixed(1)}%</td>
-        <td className="r">{a.conv.toFixed(1)}%</td>
-        <td className="r"><b>{K(a.rev)}</b></td>
-        <td><span className={"verdict "+(a.verdict==="good"?"v-good":a.verdict==="watch"?"v-watch":"v-bad")}>{a.verdict==="good"?"Worked":a.verdict==="watch"?"Watch":"Didn't"}</span></td>
-      </tr>)}</tbody>
-    </table></div></div>
-  </div>;
-}
-
-/* ============================ CLEVERTAP UPLOAD ============================ */
-const SAMPLE_CSV = `campaign,product_sku,cohort,channel,audience,sent,ctr,conversion,revenue
-SWF Cohort3 Offer,SWF-FOOD,3,WA,D2C,42000,6.2,2.4,241000
-Hearty Dry Premium,HEART-DRY,1,Email,D2C,28000,5.1,2.1,187000
-Nutrimeow Switch,NMEOW-DRY,2,WA,D2C,31000,3.9,1.6,92000`;
-function Upload({onIngest}){
-  const [rows,setRows]=useState(null); const [err,setErr]=useState(""); const [name,setName]=useState("");
-  const inp=useRef();
-  function handle(file){
-    if(!file)return; setName(file.name); setErr("");
-    Papa.parse(file,{header:true,skipEmptyLines:true,complete:r=>{
-      if(!r.data||!r.data.length){setErr("No rows found in that file.");return;}
-      setRows(r.data);
-    },error:e=>setErr("Couldn't read that file — check it's a CSV export.")});
-  }
-  function ingest(){
-    const mapped=rows.map((r,i)=>{
-      const p=CATALOG.find(x=>x.sku===(r.product_sku||"").trim())||{};
-      const ctr=parseFloat(r.ctr)||0, conv=parseFloat(r.conversion)||0;
-      const verdict=ctr>4.5&&conv>1.8?"good":(ctr<2.6||conv<1.0?"bad":"watch");
-      return {id:"up"+i, pid:p.id, name:p.name||r.product_sku||r.campaign, species:p.species, category:p.category,
-        cohortN:parseInt(r.cohort)||1, ch:r.channel||"—", aud:r.audience||"—",
-        hook:(p.cohorts&&p.cohorts[(parseInt(r.cohort)||1)-1]?p.cohorts[(parseInt(r.cohort)||1)-1].hook:r.campaign||"—"),
-        sent:parseInt(r.sent)||0, ctr, conv, rev:parseInt(r.revenue)||0, verdict, offer:true};
+function Strategy({catalog,focus,choices,setChoices,fp,locked,setLocked,onLock,caps,setCaps}){
+  const items=focus.map(f=>catalog.find(p=>p.id===f.pid)).filter(Boolean);
+  function suggestAll(){
+    const c={}; items.forEach(p=>{
+      const ly=P(SALES.find(s=>s.id===p.id)||{},"ly");
+      // contextual: prefer offer-led cohort in festive months, else cohort 1
+      const festive=[8,9,7].includes(fp.month);
+      const idx = festive ? (p.cohorts.findIndex(x=>x.offer)) : 0;
+      c[p.id]= (idx>=0?p.cohorts[idx].n:(p.cohorts[0]?p.cohorts[0].n:1));
     });
-    onIngest(mapped); setRows(null); setName("");
-    alert(mapped.length+" campaigns ingested → now visible in Assets and folded into Strategy.");
+    setChoices(c);
   }
-  function sample(){const blob=new Blob([SAMPLE_CSV],{type:"text/csv"});const u=URL.createObjectURL(blob);const a=document.createElement("a");a.href=u;a.download="clevertap_sample.csv";a.click();URL.revokeObjectURL(u);}
+  const setC=(pid,n)=>setChoices({...choices,[pid]:n});
   return <div>
-    <h1>Upload CleverTap report</h1>
-    <p className="sub">Drop a campaign export. It maps SKU → catalog, computes a verdict, and feeds Assets + the Strategy retrospective.</p>
+    <div className="page-head">
+      <div><h1>Strategy</h1><p className="sub">Lock the cohort to push per focus SKU, then generate the calendar. Suggestions use last year's same period + where we are in the year.</p></div>
+      <button className="btn ghost" onClick={suggestAll}>✨ Suggest from last year</button>
+    </div>
+    <div className="card pad" style={{marginBottom:16,background:"linear-gradient(135deg,#FFF6EF,#fff)"}}>
+      <div className="eyebrow">Contextual read · {MONTHS[fp.month]} {fp.year}</div>
+      <h2 style={{marginTop:4}}>{seasonalNote(fp.month)}</h2>
+      <div className="note" style={{marginTop:4}}>Default suggestions lean {[8,9,7].includes(fp.month)?"offer-led (festive window)":"brand/product-story led"} and prioritise SKUs that over-indexed this month last year.</div>
+    </div>
+    {items.length===0&&<div className="empty">No focus SKUs yet — set priorities first.</div>}
+    <div className="grid" style={{gridTemplateColumns:"repeat(auto-fill,minmax(340px,1fr))"}}>
+      {items.map(p=>{const cur=choices[p.id]; const lyRev=P(SALES.find(s=>s.id===p.id)||{},"ly").rev;
+        return <div className="card pad" key={p.id}>
+        <div className="row" style={{justifyContent:"space-between",alignItems:"flex-start"}}><div><h3>{p.name}</h3><div className="note">{p.brand} · LY same period {K(lyRev)}</div></div>{speciesChip(p.species)}</div>
+        <div className="note" style={{margin:"10px 0 6px",fontWeight:700,color:"var(--ink)"}}>Push which cohort?</div>
+        <div className="opts">
+          {p.cohorts.map(c=><button key={c.n} className={"opt "+(cur===c.n?"on":"")} onClick={()=>setC(p.id,c.n)} title={c.target}>Cohort {c.n}{c.offer?" · offer":""}</button>)}
+          <button className={"opt "+(cur==="skip"?"on":"")} onClick={()=>setC(p.id,"skip")}>Skip</button>
+        </div>
+        {cur&&cur!=="skip"&&p.cohorts[cur-1]&&<div className="reason">{p.cohorts[cur-1].target}<br/><b style={{color:"var(--ink)"}}>“{p.cohorts[cur-1].hook}”</b></div>}
+      </div>;})}
+    </div>
+    {items.length>0&&<div className="card pad" style={{marginTop:18}}>
+      <div className="eyebrow">Channel budget · this fortnight</div>
+      <div className="row" style={{gap:16,marginTop:10,alignItems:"center"}}>
+        <label className="note" style={{fontWeight:700}}>WA <input className="inp goal-inp" type="number" value={caps.WA} onChange={e=>setCaps({...caps,WA:+e.target.value||0})}/></label>
+        <label className="note" style={{fontWeight:700}}>PN <input className="inp goal-inp" type="number" value={caps.PN} onChange={e=>setCaps({...caps,PN:+e.target.value||0})}/></label>
+        <label className="note" style={{fontWeight:700}}>Email <input className="inp goal-inp" type="number" value={caps.Email} onChange={e=>setCaps({...caps,Email:+e.target.value||0})}/></label>
+      </div>
+      <div className="note" style={{marginTop:8}}>House rule: max 60 WA · 4 PN · a few emails per month → fortnight defaults 30 / 2 / 3. PN is scarce, so it's reserved for the top-priority SKUs at their highest-intent moment. Bump these anytime — we can always add more later.</div>
+    </div>}
+    {items.length>0&&<div className="briefbar" style={{marginTop:14}}>
+      <button className="btn" onClick={onLock}>{locked?"Re-generate calendar":"Lock priorities & build calendar →"}</button>
+      {locked&&<span className="req-note" style={{color:"var(--good)"}}>Calendar generated — see the Calendar tab.</span>}
+    </div>}
+  </div>;
+}
+
+/* ============================ CALENDAR + BRIEF ============================ */
+const AUD_OPTS=["High-Value Loyalist","Lapsed Buyer · 60–90 Days","Anxious First-Timer","Existing HUFT Customer","Post-Grooming Lapsed","Busy Urban Pet Parent"];
+const BRIEF_FIELDS=[
+  {k:"mode",q:"Is this D2C or Retail?",req:true,help:"Retail = WhatsApp only, no web/app links. D2C = all channels OK.",opts:["D2C","Retail","Hybrid"]},
+  {k:"channel",q:"Which channel?",req:true,help:"Copy format, length and emoji rules all change by channel.",opts:["WhatsApp","Email","Push notification","WhatsApp + Email"]},
+  {k:"product",q:"Which product, sub-brand, or category?",req:true,help:"Each sub-brand has its own tone.",opts:"PRODUCTS",free:"Or type a specific SKU / variant…"},
+  {k:"pillar",q:"Which HUFT pillar should lead?",help:"Trust = calm & honest. Importance = personal & warm. Edutainment = joyful. Values = purpose-led. Discovery = revealing.",opts:["Importance","Trust","Edutainment","Brand Values","Discovery"]},
+  {k:"audience",q:"Who's the audience?",req:true,help:"Be specific.",opts:AUD_OPTS,free:"Or describe your own segment…"},
+  {k:"lifestage",q:"What's the lifestage — the moment that prompts this?",help:"The 'why now'.",opts:["Ran out / replenishment due","Lapsed 60–90 days","New pet just adopted","Vet flagged an issue","Price / value comparison","Seasonal / weather"],free:"Or describe the moment…"},
+  {k:"objective",q:"What's the objective?",req:true,opts:["Win-back / Reactivation","Conversion (first purchase)","Upsell / Cross-sell","Retention / Loyalty","Product education","Seasonal / topical"],free:"Or describe your own…"},
+  {k:"offer",q:"Is there an offer or incentive?",opt:true,help:"If none, the engine leans on brand & product story.",opts:["None — brand/product story only","Free shipping","Free gift with purchase"],free:"e.g. Flat 10% off · Rs.65 intro price…"},
+  {k:"angle",q:"Any specific angle or creative hook?",opt:true,opts:["No specific angle — derive from brief","PawDay Sale"],free:"Or type a specific direction…"},
+  {k:"message",q:"What's the one message you most want them to take away?",req:true,opts:["Slow-cooked to retain nutrients","Real, human-grade ingredients — no fillers","0% preservatives, no additives","Balanced by canine/feline nutritionists","Made in India","Vet-aware, science-backed"],free:"Or type the one message…"},
+  {k:"links",q:"Any reference links to guide copy & design?",opt:true,free:"Paste a URL…"},
+  {k:"golive",q:"When does this asset go live?",req:true,help:"Sets the campaign week and TAT deadlines.",type:"date"},
+];
+function briefFromAsset(a,catalog){
+  const p=catalog.find(x=>x.id===a.pid)||{name:a.pid,cohorts:[]};
+  const c=(p.cohorts||[])[(a.cohortN||1)-1]||{};
+  return {
+    mode:a.aud||"D2C", channel:chFull[a.channel]||"WhatsApp", product:p.name,
+    audience:c.target||a.audience||"", lifestage:inferLifestage(c.target),
+    objective:inferObjective(c.target), offer:c.offer?"Free gift with purchase":"None — brand/product story only",
+    angle:a.talkingPoint||a.angle||"No specific angle — derive from brief", message:a.talkingPoint||c.hook||a.angle||"",
+    pillar:inferPillar(inferObjective(c.target),p.category), links:"", golive:a.date
+  };
+}
+function Brief({asset,catalog,value,onChange,onLoad,onMoveDate}){
+  const [showAll,setShowAll]=useState(false);
+  const prods=catalog.slice(0,showAll?catalog.length:6);
+  const need=BRIEF_FIELDS.filter(f=>f.req&&!value[f.k]).length;
+  const set=(k,v)=>{onChange({...value,[k]:v}); if(k==="golive"&&onMoveDate)onMoveDate(v);};
+  return <div className="card" style={{overflow:"hidden"}}>
+    <div className="modal-top"><div><div className="eyebrow" style={{color:"#ffd9c2"}}>✎ Guided brief</div><b>{value.product||"New brief"}</b></div>
+      <span className="note" style={{color:"#fff"}}>{fmtDate(value.golive||asset.date)}</span></div>
+    <div className="pad" style={{background:"var(--paper)"}}>
+      {BRIEF_FIELDS.map(f=><div className="field" key={f.k}>
+        <div className="q">{f.q}{f.req&&<span className="req">*</span>}{f.opt&&<span className="opt">· optional</span>}</div>
+        {f.help&&<div className="help">{f.help}</div>}
+        {f.type==="date"
+          ? <input className="inp" type="date" value={value[f.k]||""} onChange={e=>set(f.k,e.target.value)}/>
+          : f.opts==="PRODUCTS"
+            ? <div className="opts">{prods.map(p=><button key={p.id} className={"opt "+(value.product===p.name?"on":"")} onClick={()=>set("product",p.name)}>{p.name}</button>)}
+                {!showAll&&catalog.length>6&&<button className="opt more" onClick={()=>setShowAll(true)}>+{catalog.length-6} more</button>}</div>
+            : f.opts
+              ? <div className="opts">{f.opts.map(o=><button key={o} className={"opt "+(value[f.k]===o?"on":"")} onClick={()=>set(f.k,o)}>{o}</button>)}</div>
+              : null}
+        {f.free&&<input className="inp brief-free" placeholder={f.free} value={f.opts&&f.opts.includes(value[f.k])?"":(value[f.k]||"")} onChange={e=>set(f.k,e.target.value)}/>}
+      </div>)}
+      <div className="field" style={{background:"var(--line-2)"}}>
+        <div className="q">Brief payload <span className="opt">· exactly what loads to the Creative Engine</span></div>
+        <pre style={{font:"12px/1.6 ui-monospace,Menlo,monospace",whiteSpace:"pre-wrap",margin:"8px 0 0",color:"var(--ink)"}}>{briefPayload(value)}</pre>
+        <button className="btn ghost sm" style={{marginTop:8}} onClick={()=>{navigator.clipboard&&navigator.clipboard.writeText(briefPayload(value))}}>Copy payload</button>
+      </div>
+      <div className="briefbar">
+        <button className="btn" disabled={need>0} onClick={onLoad}>Generate & load to Creative Engine →</button>
+        <button className="btn ghost">Save as draft</button>
+        <span className="req-note">{need>0?`Still needed: ${need} required field${need>1?"s":""}`:"Ready to load"}</span>
+      </div>
+    </div>
+  </div>;
+}
+function CalendarView({catalog,assets,setAssets,fp,briefs,setBriefs,toast,caps,onRebuild}){
+  const [sel,setSel]=useState(null);
+  const [filt,setFilt]=useState({WA_D2C:true,WA_Retail:true,PN:true,Email:true});
+  const [aud,setAud]=useState("All");
+  const y=fp.year,m=fp.month,dim=daysInMonth(y,m),offset=new Date(y,m,1).getDay();
+  const fkey=a=> a.channel==="WA" ? (a.aud==="Retail"?"WA_Retail":"WA_D2C") : a.channel;
+  const auds=["All",...Array.from(new Set(assets.map(a=>a.audience).filter(Boolean)))];
+  const vis=a=> filt[fkey(a)] && (aud==="All"||a.audience===aud);
+  const cells=[]; for(let i=0;i<offset;i++)cells.push(null); for(let d=1;d<=dim;d++)cells.push(d);
+  const inHalf=d=> fp.half==="H1"? d<=15 : d>=16;
+  const selAsset=assets.find(a=>a.id===sel);
+
+  function moveDate(id,dateStr){ setAssets(assets.map(a=>a.id===id?{...a,date:dateStr}:a)); }
+  function addAdhoc(){
+    const d=fp.half==="H1"?3:18; const pid=(catalog.find(p=>p.owner==="HUFT"&&p.cohorts.length)||catalog[0]).id;
+    const na={id:"adhoc_"+Date.now(),pid,cohortN:1,channel:"WA",aud:"D2C",audience:"Ad-hoc segment",angle:"",date:iso(y,m,d),adhoc:true,status:"draft"};
+    setAssets([...assets,na]); setSel(na.id);
+  }
+  function loadBrief(a){ setBriefs({...briefs,[a.id]:{...(briefs[a.id]||briefFromAsset(a,catalog)),status:"queued"}});
+    setAssets(assets.map(x=>x.id===a.id?{...x,status:"queued"}:x)); toast(`Brief for “${(catalog.find(p=>p.id===a.pid)||{}).name||"asset"}” loaded to CRM Creative Engine`); }
+  function loadAll(){ const nb={...briefs}; assets.forEach(a=>{nb[a.id]=nb[a.id]||briefFromAsset(a,catalog)}); setBriefs(nb);
+    setAssets(assets.map(a=>({...a,status:"queued"}))); toast(`${assets.length} briefs generated and queued to CRM Creative Engine`); }
+  function reSuggest(){ if(onRebuild){onRebuild(); toast("Plan regenerated from strategy rules — manual moves reset");} }
+
+  const Tog=({k,label,cls})=><span className={"toggle "+(filt[k]?"on":"")} onClick={()=>setFilt({...filt,[k]:!filt[k]})}><span className="dot" style={{background:cls}}></span>{label}</span>;
+  return <div>
+    <div className="page-head">
+      <div><h1>Calendar</h1><p className="sub">{halfLabel(fp)} · priority comms. Click a send to open its brief, move dates, or load to the Creative Engine.</p></div>
+      <div className="row" style={{gap:8}}><button className="btn ghost sm" onClick={addAdhoc}>+ Ad-hoc</button><button className="btn ghost sm" onClick={reSuggest}>↻ Re-suggest</button><button className="btn sm" onClick={loadAll}>Load all briefs →</button></div>
+    </div>
+    <div className="pill-row">
+      <Tog k="WA_D2C" label="WA · D2C" cls="#25946b"/><Tog k="WA_Retail" label="WA · Retail" cls="#1c7a4f"/><Tog k="PN" label="Push" cls="#3b6fd4"/><Tog k="Email" label="Email" cls="#b6602a"/>
+      <span style={{width:10}}/><span className="note">Audience:</span>
+      <select className="inp" style={{width:"auto",padding:"7px 10px"}} value={aud} onChange={e=>setAud(e.target.value)}>{auds.map(a=><option key={a}>{a}</option>)}</select>
+    </div>
+    {(()=>{const useCt={WA:assets.filter(a=>a.channel==="WA").length,PN:assets.filter(a=>a.channel==="PN").length,Email:assets.filter(a=>a.channel==="Email").length};
+      const conf=findConflicts(assets,catalog); const cp=caps||{WA:30,PN:2,Email:3};
+      return <div className="card pad" style={{marginBottom:14}}>
+        <div className="row" style={{justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:10}}>
+          <div style={{maxWidth:640}}><div className="eyebrow">Plan logic</div>
+            <div className="note" style={{marginTop:3}}>Food leads the fortnight, Treats follows as the reward story, Lifestyle rides the tail. Each species hears <b>one category per day</b> — when we talk food we don't talk treats. Every send runs a 3-touch arc: open → prove → close. PN is rationed to the highest-intent moments.</div></div>
+          <div className="row" style={{gap:8}}>
+            <span className="chip wa">WA {useCt.WA}/{cp.WA}</span>
+            <span className="chip pn">PN {useCt.PN}/{cp.PN}</span>
+            <span className="chip em">Email {useCt.Email}/{cp.Email}</span>
+            {conf.length===0?<span className="chip mov">No cannibalization</span>:<span className="verdict v-bad">{conf.length} conflict{conf.length>1?"s":""}</span>}
+          </div>
+        </div>
+        {conf.length>0&&<div style={{marginTop:10}}>{conf.slice(0,4).map((c,i)=><div className="reason" key={i} style={{marginBottom:6,color:"var(--bad)"}}>⚠ {c.msg}</div>)}</div>}
+      </div>;})()}
+    <div className={"calwrap "+(sel?"split":"")}>
+      <div className="cal-side">
+        <div className="cal">
+          {["Sun","Mon","Tue","Wed","Thu","Fri","Sat"].map(d=><div className="dow" key={d}>{d}</div>)}
+          {cells.map((d,i)=> d===null?<div className="day empty" key={i}></div>:
+            <div className={"day "+(!inHalf(d)?"off":"")} key={i}>
+              <div className="dn">{d}</div>
+              {assets.filter(a=>{const dd=new Date(a.date).getDate();return dd===d&&new Date(a.date).getMonth()===m&&vis(a)}).map(a=>{const p=catalog.find(x=>x.id===a.pid)||{};
+                return <div key={a.id} className={"send "+chCls[a.channel]+(sel===a.id?" on":"")} onClick={()=>setSel(a.id)}>
+                  <span style={{overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{p.name||a.pid}</span>
+                  <span className="b">{a.channel==="WA"?a.aud[0]:a.channel==="PN"?"P":"E"}{a.status==="queued"?"✓":""}</span>
+                </div>;})}
+            </div>)}
+        </div>
+        <div className="legend">
+          <span><span className="dot" style={{background:"#25946b"}}></span>WhatsApp</span>
+          <span><span className="dot" style={{background:"#3b6fd4"}}></span>Push</span>
+          <span><span className="dot" style={{background:"#b6602a"}}></span>Email</span>
+          <span style={{flex:1}}/><span>{assets.filter(vis).length} comms · {assets.filter(a=>a.status==="queued").length} queued</span>
+        </div>
+      </div>
+      {selAsset&&<div className="brief-side">
+        <div className="row" style={{justifyContent:"space-between",alignItems:"center",marginBottom:10}}>
+          <div className="eyebrow">Idea → brief{selAsset.adhoc?" · ad-hoc":""}</div>
+          <button className="btn ghost sm" onClick={()=>setSel(null)}>✕ close</button>
+        </div>
+        <div className="card pad" style={{marginBottom:12,borderLeft:"4px solid var(--orange)"}}>
+          <div className="row" style={{justifyContent:"space-between",alignItems:"center"}}>
+            <div className="eyebrow">Why this comm, this day</div>
+            <span className="chip">{selAsset.seqName||"Ad-hoc"}{selAsset.seq?" · touch "+selAsset.seq+"/3":""}</span>
+          </div>
+          <div style={{fontWeight:700,fontSize:14,margin:"8px 0 4px"}}>“{selAsset.talkingPoint||selAsset.angle||"—"}”</div>
+          {selAsset.hookSrc&&<div className="note" style={{color:selAsset.altUsed?"var(--warn)":"var(--good)",fontWeight:600}}>{selAsset.hookSrc}</div>}
+          {selAsset.why&&<div className="reason" style={{marginTop:8}}>{selAsset.why}</div>}
+          <button className="btn ghost sm" style={{marginTop:10}} onClick={()=>{
+            const pr=catalog.find(x=>x.id===selAsset.pid); if(!pr)return;
+            const c=(pr.cohorts||[])[(selAsset.cohortN||1)-1]||{n:selAsset.cohortN};
+            const alt=suggestAltHook(pr,c,1+Math.floor(Math.random()*97));
+            setAssets(assets.map(x=>x.id===selAsset.id?{...x,talkingPoint:alt.hook,angle:alt.hook,hookSrc:"Swapped by you — "+alt.src,altUsed:true}:x));
+            setBriefs({...briefs,[selAsset.id]:{...(briefs[selAsset.id]||briefFromAsset(selAsset,catalog)),message:alt.hook}});
+            toast("New talking point applied — brief updated");
+          }}>↻ Suggest new talking point</button>
+        </div>
+        <Brief asset={selAsset} catalog={catalog}
+          value={briefs[selAsset.id]||briefFromAsset(selAsset,catalog)}
+          onChange={v=>setBriefs({...briefs,[selAsset.id]:v})}
+          onMoveDate={d=>moveDate(selAsset.id,d)}
+          onLoad={()=>loadBrief(selAsset)}/>
+      </div>}
+    </div>
+  </div>;
+}
+
+/* ============================ IMPORT (CleverTap) ============================ */
+const SAMPLE_CSV=`campaign,product_sku,cohort,channel,audience,sent,ctr,conversion,revenue
+SWF Cohort3 Offer,SWF-FOOD,3,WA,D2C,42000,6.2,2.4,241000
+Hearty Dry Premium,HEART-DRY,1,Email,D2C,28000,5.1,2.1,187000`;
+function ImportTab(){
+  const [rows,setRows]=useState(null),[name,setName]=useState(""); const inp=useRef();
+  function handle(f){if(!f)return;setName(f.name);Papa.parse(f,{header:true,skipEmptyLines:true,complete:r=>setRows(r.data)})}
+  function sample(){const b=new Blob([SAMPLE_CSV],{type:"text/csv"});const u=URL.createObjectURL(b);const a=document.createElement("a");a.href=u;a.download="clevertap_sample.csv";a.click();URL.revokeObjectURL(u)}
+  return <div>
+    <div className="page-head"><div><h1>Import CleverTap report</h1><p className="sub">Drop a campaign export — it feeds Sales × Performance and the Strategy retrospective.</p></div></div>
     <input ref={inp} type="file" accept=".csv" style={{display:"none"}} onChange={e=>handle(e.target.files[0])}/>
-    <div className="drop" onClick={()=>inp.current.click()}
-      onDragOver={e=>{e.preventDefault()}} onDrop={e=>{e.preventDefault();handle(e.dataTransfer.files[0])}}>
-      <div className="ic">📤</div>
-      <div style={{fontWeight:700,marginTop:8}}>Drop CleverTap CSV here, or click to browse</div>
-      <div className="note" style={{marginTop:4}}>{name||"Expected columns: campaign, product_sku, cohort, channel, audience, sent, ctr, conversion, revenue"}</div>
+    <div className="drop-zone" onClick={()=>inp.current.click()} onDragOver={e=>e.preventDefault()} onDrop={e=>{e.preventDefault();handle(e.dataTransfer.files[0])}}>
+      <div style={{fontSize:30}}>📤</div><div style={{fontWeight:700,marginTop:8}}>Drop CleverTap CSV, or click to browse</div>
+      <div className="note" style={{marginTop:4}}>{name||"campaign, product_sku, cohort, channel, audience, sent, ctr, conversion, revenue"}</div>
     </div>
-    {err&&<div className="note" style={{color:"var(--bad)",marginTop:12}}>{err}</div>}
-    <div className="row" style={{marginTop:12}}>
-      <button className="btn ghost" onClick={sample}>Download sample CSV</button>
-      {rows&&<button className="btn" onClick={ingest}>Ingest {rows.length} rows</button>}
-    </div>
-    {rows&&<div className="card" style={{marginTop:16}}><div style={{padding:8}}><table>
-      <thead><tr>{Object.keys(rows[0]).map(k=><th key={k}>{k}</th>)}</tr></thead>
-      <tbody>{rows.slice(0,12).map((r,i)=><tr key={i}>{Object.keys(rows[0]).map(k=><td key={k}>{r[k]}</td>)}</tr>)}</tbody>
-    </table></div></div>}
+    <div className="row" style={{marginTop:12}}><button className="btn ghost" onClick={sample}>Download sample CSV</button>{rows&&<button className="btn" onClick={()=>{alert(rows.length+" rows ingested (demo).");setRows(null)}}>Ingest {rows.length} rows</button>}</div>
+    {rows&&<div className="card" style={{marginTop:16}}><div style={{padding:8}}><table><thead><tr>{Object.keys(rows[0]).map(k=><th key={k}>{k}</th>)}</tr></thead>
+      <tbody>{rows.slice(0,10).map((r,i)=><tr key={i}>{Object.keys(rows[0]).map(k=><td key={k}>{r[k]}</td>)}</tr>)}</tbody></table></div></div>}
   </div>;
 }
 
 /* ============================ APP ============================ */
+/* ---- talking-point intelligence ---- */
+function hookEvidence(pid,cohortN){
+  const hits=ASSETS.filter(a=>a.pid===pid&&a.cohortN===cohortN);
+  if(!hits.length)return null;
+  const best=[...hits].sort((a,b)=>b.conv-a.conv)[0];
+  return {worked:hits.some(a=>a.verdict==="good"),failed:hits.every(a=>a.verdict==="bad"),best,n:hits.length};
+}
+const ANGLE_LIB={
+  Food:["Replenishment nudge — time to restock the bowl, sized to their last order","Ingredient proof — show the label, name the meat %","Vet / nutritionist endorsement angle","Real-parent story — energy & coat change after the switch"],
+  Treats:["Training-moment angle — reward without guilt","Single-ingredient honesty — read the back of our pack vs theirs","Combo / variety pack — a new texture to try this week","Weekend enrichment ritual — the long-chew wind-down"],
+  Lifestyle:["Season-fit angle — weather-led need, right now","Complete-the-routine bundle alongside their food order"]
+};
+function suggestAltHook(p,cohort,salt){
+  if(!salt){ for(const c of (p.cohorts||[])){ if(c.n!==cohort.n){ const ev=hookEvidence(p.id,c.n); if(ev&&ev.worked) return {hook:c.hook,src:`cohort ${c.n}'s hook is already proven on this product (conv ${ev.best.conv.toFixed(1)}%)`}; } } }
+  const lib=ANGLE_LIB[p.category]||ANGLE_LIB.Lifestyle;
+  const idx=(seed(p.id+(cohort.n||1))+(salt||0))%lib.length;
+  return {hook:lib[idx],src:"new angle from the "+p.category+" playbook — untested, run as an A/B"};
+}
+function findConflicts(assets,catalog){
+  const out=[],byDay={};
+  assets.forEach(a=>{byDay[a.date]=byDay[a.date]||[];byDay[a.date].push(a)});
+  Object.entries(byDay).forEach(([d,list])=>{
+    for(let i=0;i<list.length;i++)for(let j=i+1;j<list.length;j++){
+      const A=catalog.find(x=>x.id===list[i].pid)||{},B=catalog.find(x=>x.id===list[j].pid)||{};
+      if(!A.species||A.species!==B.species)continue;
+      if(A.category!==B.category)out.push({date:d,msg:`${fmtDate(d)}: ${A.name} (${A.category}) and ${B.name} (${B.category}) both talk to ${A.species} parents — competing for the same wallet on the same day`});
+      else if(list[i].pid!==list[j].pid)out.push({date:d,msg:`${fmtDate(d)}: two ${A.category} pushes to ${A.species} parents (${A.name} vs ${B.name}) — pick one`});
+    }
+  });
+  return out;
+}
+const SEQ=[
+  {k:"story",label:"Open the story",why:"First touch — establish the talking point before any ask"},
+  {k:"proof",label:"Prove it",why:"Second touch — evidence lands while the opener is still in recall (≤3 days)"},
+  {k:"close",label:"Close / nudge",why:"Third touch — the ask only lands after story + proof have run"}
+];
+function buildCalendar(focus,choices,catalog,fp,caps){
+  caps=caps||{WA:30,PN:2,Email:3};
+  const end=daysInMonth(fp.year,fp.month);
+  const first=fp.half==="H1"?1:16, last=fp.half==="H1"?15:end, span=last-first+1;
+  const catW={Food:0,Treats:1,Lifestyle:2};
+  const items=focus.map(f=>({f,p:catalog.find(x=>x.id===f.pid)}))
+    .filter(x=>x.p&&choices[x.f.pid]!=="skip")
+    .sort((a,b)=>(catW[a.p.category]-catW[b.p.category])||((b.f.goal||0)-(a.f.goal||0)));
+  const used={WA:0,PN:0,Email:0}, out=[];
+  const catStory={Food:"the bowl conversation leads the fortnight",Treats:"the reward story only starts once the bowl conversation has run",Lifestyle:"lifestyle rides the tail of the fortnight, never against a meal or treat push"};
+  function windowFor(cat){
+    if(cat==="Food")return [first,first+Math.max(3,Math.floor(span*0.55))-1];
+    if(cat==="Treats")return [first+Math.floor(span*0.4),last];
+    return [Math.max(first,last-3),last];
+  }
+  const dayLoad={},speciesCatDay={},catIdx={};
+  function place(want,species,category,w0,w1){
+    for(let off=0;off<=span;off++){
+      const cands=off===0?[want]:[want+off,want-off];
+      for(const cand of cands){
+        if(cand<w0||cand>w1)continue;
+        const key=species+"|"+cand;
+        if(speciesCatDay[key]&&speciesCatDay[key]!==category)continue;
+        if((dayLoad[cand]||0)>=3)continue;
+        speciesCatDay[key]=category;dayLoad[cand]=(dayLoad[cand]||0)+1;
+        return cand;
+      }
+    }
+    return Math.min(Math.max(want,w0),w1);
+  }
+  items.forEach((it,idx)=>{
+    const {f,p}=it;
+    const cN=choices[f.pid];
+    const cohort=p.cohorts[(cN||1)-1]||p.cohorts[0]||{n:cN||1,target:"—",hook:"—",offer:false};
+    const ev=hookEvidence(p.id,cohort.n||1);
+    let hook=cohort.hook, altUsed=false;
+    let hookSrc=ev?(ev.worked?`Proven talking point — conv ${ev.best.conv.toFixed(1)}% / CTR ${ev.best.ctr.toFixed(1)}% when it last ran`:`Ran before with mixed results (conv ${ev.best.conv.toFixed(1)}%) — kept, watch it`):"Untested talking point from the cohort brief — first outing";
+    if(ev&&ev.failed){const alt=suggestAltHook(p,cohort);hook=alt.hook;altUsed=true;hookSrc=`Old hook failed when it ran (conv ${ev.best.conv.toFixed(1)}%) — replaced: ${alt.src}`;}
+    const [w0,w1]=windowFor(p.category);
+    const ck=p.category+p.species; const ci=(catIdx[ck]=catIdx[ck]||0); catIdx[ck]++;
+    const anchor=w0+(ci*2)%Math.max(1,w1-w0);
+    const isTop=idx<2;
+    const highIntent=!!cohort.offer||/replenish|lapsed|back in stock|not purchased|not bought/i.test((cohort.target||"")+(cohort.hook||""));
+    const touches=[{seq:0,channel:"WA",aud:"D2C"},
+      {seq:1,channel:(p.category==="Food"&&used.Email<caps.Email)?"Email":"WA",aud:"D2C"},
+      {seq:2,channel:(isTop&&highIntent&&used.PN<caps.PN)?"PN":"WA",aud:"D2C"}];
+    if(p.category==="Food")touches.push({seq:2,channel:"WA",aud:"Retail"});
+    touches.forEach((t,ti)=>{
+      if(t.channel==="Email"&&used.Email>=caps.Email)t.channel="WA";
+      if(t.channel==="PN"&&used.PN>=caps.PN)t.channel="WA";
+      if(t.channel==="WA"&&used.WA>=caps.WA)return;
+      used[t.channel]++;
+      const day=place(anchor+t.seq*3+(t.aud==="Retail"?1:0),p.species,p.category,w0,w1);
+      const sq=SEQ[t.seq];
+      out.push({id:`c_${f.pid}_${ti}`,pid:f.pid,cohortN:cohort.n||cN||1,channel:t.channel,aud:t.aud,
+        audience:cohort.target,angle:hook,talkingPoint:hook,hookSrc,altUsed,
+        seq:t.seq+1,seqName:sq.label,
+        why:`${sq.why}. ${p.name} sits in the ${p.category} window (day ${day-first+1} of ${span}) because ${catStory[p.category]}; ${p.species} parents hear one category per day, so this never competes with a ${p.category==="Food"?"treat":"food"} push.`,
+        date:iso(fp.year,fp.month,day),goal:f.goal,adhoc:false,status:"draft"});
+    });
+  });
+  return out;
+}
 function App(){
-  const [tab,setTab]=useState("catalog");
-  const [dash,setDash]=useState("sales");
+  const [tab,setTab]=useState("dashboard");
+  const [sideOpen,setSide]=useState(false);
   const [period,setPeriod]=useState("lm");
-  const [uploaded,setUploaded]=useState([]);
-  const [status,setStatus]=useState(USE_MOCK?"mock":"loading"); // mock|loading|live|error
+  const [catalog,setCatalog]=useState(CATALOG);
+  const [fp,setFp]=useState({year:2026,month:6,half:"H1"});
+  const [focus,setFocus]=useState([{pid:"swf-food",goal:2600000},{pid:"hearty-dry",goal:1900000},{pid:"nutriwag-dry",goal:1400000},{pid:"meowsi-wet",goal:1100000},{pid:"nutrimeow-dry",goal:800000}]);
+  const [choices,setChoices]=useState({});
+  const [locked,setLocked]=useState(false);
+  const [calAssets,setCalAssets]=useState([]);
+  const [briefs,setBriefs]=useState({});
+  const [caps,setCaps]=useState({WA:30,PN:2,Email:3});
+  const [status,setStatus]=useState(USE_MOCK?"mock":"loading");
   const [,setVer]=useState(0);
-  useEffect(()=>{ if(USE_MOCK) return;
-    loadData().then(()=>{setStatus("live");setVer(v=>v+1)})
-              .catch(e=>{console.error(e);setStatus("error")});
-  },[]);
-  const TABS=[["catalog","Catalog"],["dashboard","Dashboard"],["strategy","Strategy"],["calendar","Calendar"],["assets","Assets"],["upload","Upload"]];
-  const showPeriod = tab==="dashboard"||tab==="strategy";
-  const badge = status==="mock"?" · MOCK":status==="loading"?" · LOADING":status==="live"?" · LIVE":" · API OFFLINE";
-  return <div>
-    <div className="top">
-      <div className="top-in">
-        <div className="brand"><div className="paw">H</div><div>HUFT CRM Strategy<small>Sales-driven planning</small></div></div>
-        <span className="build" style={status==="error"?{color:"var(--bad)",borderColor:"var(--bad)"}:status==="live"?{color:"var(--good)",borderColor:"#C6E9D6"}:{}}>{BUILD}{badge}</span>
-        <div className="spacer"></div>
-        {showPeriod && <div className="period">{PERIODS.map(p=><button key={p.k} className={period===p.k?"on":""} onClick={()=>setPeriod(p.k)}>{p.l}</button>)}</div>}
+  const [toastMsg,setToast]=useState("");
+  const toast=m=>{setToast(m);setTimeout(()=>setToast(""),2600)};
+  useEffect(()=>{ if(USE_MOCK)return; loadData().then(()=>{setStatus("live");setVer(v=>v+1)}).catch(()=>setStatus("error")); },[]);
+  function lock(){ const gen=buildCalendar(focus,choices,catalog,fp,caps); setCalAssets(gen); setLocked(true); setTab("calendar"); toast(`Calendar built · ${gen.length} priority comms`); }
+
+  const NAV=[["dashboard","Dashboard","dash"],["catalog","Catalog","catalog"],["perf","Sales × Performance","perf"],["priority","Priorities","priority"],["strategy","Strategy","strategy"],["calendar","Calendar","calendar"]];
+  const badge=status==="mock"?"MOCK":status==="live"?"LIVE":status==="loading"?"…":"API OFF";
+  return <div className="app">
+    <div className={"side "+(sideOpen?"open":"")}>
+      <div className="logo"><div className="paw">H</div><div>CRM Strategy<small>Sales-driven planning</small></div></div>
+      <div className="nav2">
+        {NAV.map(([k,l,ic])=><button key={k} className={tab===k?"on":""} onClick={()=>{setTab(k);setSide(false)}}><Icon n={ic}/>{l}</button>)}
+        <div className="sec">Data</div>
+        <button className={tab==="import"?"on":""} onClick={()=>{setTab("import");setSide(false)}}><Icon n="import"/>Import</button>
       </div>
-      <div className="nav">{TABS.map(([k,l])=><button key={k} className={tab===k?"on":""} onClick={()=>setTab(k)}>{l}</button>)}</div>
+      <div className="side-foot"><span className="badge"><span className="live" style={status==="live"?{background:"var(--good)"}:status==="error"?{background:"var(--bad)"}:{}}></span>{BUILD} · {badge}</span></div>
     </div>
-    <div className="wrap">
-      {status==="error"&&<div className="card pad" style={{marginBottom:18,borderColor:"var(--bad)",background:"var(--bad-soft)"}}>
-        <b>Can't reach the sales-api at {API_BASE}.</b> <span className="note">Showing mock data. Start the API (see the sales-api README) or set <code>USE_MOCK=true</code>.</span>
-      </div>}
-      {tab==="catalog"&&<Catalog/>}
-      {tab==="dashboard"&&<div>
-        <h1>Dashboard</h1><p className="sub">Sales insights, auto-suggested audience cohorts, and the priority order that drives Strategy.</p>
-        <div className="subnav">
-          <button className={dash==="sales"?"on":""} onClick={()=>setDash("sales")}>Sales insights</button>
-          <button className={dash==="cohorts"?"on":""} onClick={()=>setDash("cohorts")}>Audience cohorts</button>
-          <button className={dash==="priorities"?"on":""} onClick={()=>setDash("priorities")}>Priorities</button>
-        </div>
-        {dash==="sales"&&<SalesInsights period={period}/>}
-        {dash==="cohorts"&&<AudienceCohorts/>}
-        {dash==="priorities"&&<Priorities period={period}/>}
-      </div>}
-      {tab==="strategy"&&<Strategy period={period}/>}
-      {tab==="calendar"&&<CrmCalendar/>}
-      {tab==="assets"&&<Assets extra={uploaded}/>}
-      {tab==="upload"&&<Upload onIngest={r=>setUploaded([...uploaded,...r])}/>}
+    <div className="main">
+      <button className="menu-btn" onClick={()=>setSide(!sideOpen)}>☰</button>
+      {tab==="dashboard"&&<Dashboard period={period} setPeriod={setPeriod}/>}
+      {tab==="catalog"&&<CatalogTab catalog={catalog} setCatalog={setCatalog}/>}
+      {tab==="perf"&&<SalesPerformance period={period} setPeriod={setPeriod}/>}
+      {tab==="priority"&&<Priorities catalog={catalog} focus={focus} setFocus={setFocus} fp={fp} setFp={setFp}/>}
+      {tab==="strategy"&&<Strategy catalog={catalog} focus={focus} choices={choices} setChoices={setChoices} fp={fp} locked={locked} setLocked={setLocked} onLock={lock} caps={caps} setCaps={setCaps}/>}
+      {tab==="calendar"&&(locked?<CalendarView catalog={catalog} assets={calAssets} setAssets={setCalAssets} fp={fp} briefs={briefs} setBriefs={setBriefs} toast={toast} caps={caps} onRebuild={lock}/>:
+        <div className="empty">No calendar yet.<br/><button className="btn" style={{marginTop:14}} onClick={()=>setTab("strategy")}>Go to Strategy to lock priorities →</button></div>)}
+      {tab==="import"&&<ImportTab/>}
     </div>
+    {toastMsg&&<div className="toast">{toastMsg}</div>}
   </div>;
 }
 ReactDOM.createRoot(document.getElementById("root")).render(<App/>);
