@@ -24,7 +24,7 @@
 <link href="https://fonts.googleapis.com/css2?family=Rubik:ital,wght@0,400;0,500;0,600;0,700;0,800;1,400&display=swap" rel="stylesheet">
 <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
 <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
-<script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+<script src="https://unpkg.com/@babel/standalone@7.24.7/babel.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js"></script>
 <script>
 /* on-page error reporter: if the app throws (or Babel fails to compile), show it instead of a blank page */
@@ -211,7 +211,7 @@
 <div id="root"></div>
 <script type="text/babel" data-presets="react">
 const { useState, useMemo, useRef, useEffect } = React;
-const BUILD = "STRAT-1.0.1";
+const BUILD = "STRAT-1.0.2";
 const USE_MOCK = true;                       // flip to false to pull live from the sales-api
 const API_BASE = "http://localhost:8787";    // sales-api origin (Node/Express -> MySQL)
 
