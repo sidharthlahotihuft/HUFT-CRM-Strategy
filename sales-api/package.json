@@ -1,0 +1,16 @@
+{
+  "name": "huft-crm-strategy-sales-api",
+  "version": "1.0.0",
+  "private": true,
+  "description": "MySQL -> RPC bridge for the HUFT CRM Strategy frontend",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "health": "curl -s http://localhost:8787/health"
+  },
+  "dependencies": {
+    "cors": "^2.8.5",
+    "express": "^4.19.2",
+    "mysql2": "^3.11.0"
+  }
+}

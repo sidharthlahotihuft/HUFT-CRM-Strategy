@@ -1,0 +1,934 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>HUFT CRM Strategy</title>
+<!--
+  HUFT CRM Strategy Engine
+  BUILD: STRAT-1.0.0
+  Single-file React (UMD + Babel), no build step. Deploy to Vercel as index.html.
+  Family: sits alongside CRM Creative (live) + Sales Insight Engine. HUFT brand (Sweet Orange #FF6D1F, Rubik).
+
+  DATA CONTRACT (swap-to-real):
+    USE_MOCK=true  -> uses embedded mock built on the REAL HUFT catalog + real cohort brief grid.
+    USE_MOCK=false -> wire the fetchers in the DATA LAYER section to named Supabase RPCs / MySQL views:
+        fetchSales(period)      -> rpc('strategy_sales_by_product', {period})
+        fetchAffinity()         -> rpc('strategy_combo_affinity')          (2-3 product co-purchase)
+        fetchAssets(period)     -> rpc('strategy_asset_performance', {period})  (CleverTap-fed)
+    Order shape mirrors the CleverTap "Charged" event: per line-item Product Name, category(=product.type),
+    item_price, brand(=vendor), product_url, image_url, cookie_id(=sku), tags, Quantity, RP_date.
+-->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Rubik:ital,wght@0,400;0,500;0,600;0,700;0,800;1,400&display=swap" rel="stylesheet">
+<script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+<script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+<script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js"></script>
+<style>
+  :root{
+    --orange:#FF6D1F; --orange-soft:#FFF1E8; --orange-line:#FFD9C2;
+    --teal:#0E8C82; --teal-soft:#E4F4F2;               /* Cat accent, complements orange */
+    --ink:#1A1512; --muted:#8B817A; --faint:#B7ADA4;
+    --paper:#FBF8F4; --card:#FFFFFF; --line:#ECE4DA; --line-2:#F4EEE6;
+    --good:#1E9E6A; --good-soft:#E6F5EE; --warn:#C77D12; --warn-soft:#FBF0DE; --bad:#D14343; --bad-soft:#FBE9E9;
+    --shadow:0 1px 2px rgba(26,21,18,.05),0 6px 20px rgba(26,21,18,.05);
+    --r:14px; --r-sm:10px;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--paper);color:var(--ink);font-family:Rubik,system-ui,sans-serif;-webkit-font-smoothing:antialiased}
+  #root{min-height:100vh}
+  a{color:inherit}
+  button{font-family:inherit;cursor:pointer}
+  ::selection{background:var(--orange-line)}
+
+  /* shell */
+  .top{position:sticky;top:0;z-index:40;background:rgba(251,248,244,.86);backdrop-filter:blur(10px);border-bottom:1px solid var(--line)}
+  .top-in{max-width:1240px;margin:0 auto;padding:12px 22px;display:flex;align-items:center;gap:16px}
+  .brand{display:flex;align-items:center;gap:11px;font-weight:800;letter-spacing:-.02em;font-size:16px}
+  .paw{width:30px;height:30px;border-radius:9px;background:var(--orange);display:grid;place-items:center;color:#fff;font-weight:800;font-size:15px;box-shadow:0 3px 8px rgba(255,109,31,.35)}
+  .brand small{display:block;font-weight:500;color:var(--muted);font-size:11px;letter-spacing:.02em;margin-top:-1px}
+  .build{font-size:10.5px;color:var(--faint);border:1px solid var(--line);border-radius:20px;padding:3px 9px;font-weight:600;letter-spacing:.03em}
+  .spacer{flex:1}
+  .period{display:flex;background:var(--card);border:1px solid var(--line);border-radius:11px;padding:3px;gap:2px}
+  .period button{border:0;background:transparent;color:var(--muted);font-weight:600;font-size:12.5px;padding:7px 12px;border-radius:8px;white-space:nowrap}
+  .period button.on{background:var(--ink);color:#fff}
+
+  .nav{max-width:1240px;margin:0 auto;padding:0 22px;display:flex;gap:2px;overflow-x:auto}
+  .nav button{border:0;background:transparent;color:var(--muted);font-weight:600;font-size:14px;padding:14px 15px;position:relative;white-space:nowrap}
+  .nav button.on{color:var(--ink)}
+  .nav button.on:after{content:"";position:absolute;left:12px;right:12px;bottom:-1px;height:3px;background:var(--orange);border-radius:3px}
+
+  .wrap{max-width:1240px;margin:0 auto;padding:26px 22px 80px}
+  .subnav{display:flex;gap:7px;margin-bottom:22px;flex-wrap:wrap}
+  .subnav button{border:1px solid var(--line);background:var(--card);color:var(--muted);font-weight:600;font-size:13px;padding:8px 14px;border-radius:20px}
+  .subnav button.on{background:var(--orange-soft);border-color:var(--orange-line);color:var(--orange)}
+
+  /* type */
+  h1{font-size:22px;font-weight:700;letter-spacing:-.02em;margin:0 0 3px}
+  .sub{color:var(--muted);font-size:13.5px;margin:0 0 22px}
+  .eyebrow{font-size:11px;font-weight:700;letter-spacing:.09em;text-transform:uppercase;color:var(--faint)}
+  h2{font-size:15px;font-weight:700;letter-spacing:-.01em;margin:0 0 2px}
+
+  /* cards */
+  .card{background:var(--card);border:1px solid var(--line);border-radius:var(--r);box-shadow:var(--shadow)}
+  .pad{padding:18px}
+  .grid{display:grid;gap:14px}
+  .row{display:flex;gap:14px;flex-wrap:wrap}
+
+  .chip{display:inline-flex;align-items:center;gap:5px;font-size:11.5px;font-weight:600;padding:3px 9px;border-radius:20px;background:var(--line-2);color:var(--muted);border:1px solid var(--line);white-space:nowrap}
+  .chip.dog{background:var(--orange-soft);color:#C4531A;border-color:var(--orange-line)}
+  .chip.cat{background:var(--teal-soft);color:var(--teal);border-color:#BFE6E1}
+  .chip.life{background:#F0ECFB;color:#6B54B8;border-color:#DED3F5}
+  .chip.food{background:#EAF3EC;color:#2E7D4F;border-color:#CFE6D6}
+  .chip.treats{background:#FBF0DE;color:#9A6410;border-color:#F0DDBB}
+  .chip.offer{background:var(--ink);color:#fff;border-color:var(--ink)}
+  .chip.p3{background:#EEF1F4;color:#556;border-color:#DDE3E9}
+  .chip.mov{background:var(--good-soft);color:var(--good);border-color:#C6E9D6}
+
+  .delta{font-weight:700;font-size:12.5px}
+  .delta.up{color:var(--good)} .delta.down{color:var(--bad)} .delta.flat{color:var(--muted)}
+
+  /* catalog */
+  .tiles{display:grid;grid-template-columns:repeat(auto-fill,minmax(206px,1fr));gap:14px}
+  .tile{background:var(--card);border:1px solid var(--line);border-radius:var(--r);overflow:hidden;box-shadow:var(--shadow);cursor:pointer;transition:transform .12s,box-shadow .12s}
+  .tile:hover{transform:translateY(-2px);box-shadow:0 8px 26px rgba(26,21,18,.10)}
+  .thumb{height:112px;display:grid;place-items:center;font-weight:800;font-size:30px;color:#fff;letter-spacing:-.02em;position:relative}
+  .thumb .own{position:absolute;top:8px;right:8px}
+  .tile-b{padding:12px 13px 14px}
+  .tile-b .nm{font-weight:700;font-size:13.5px;letter-spacing:-.01em;line-height:1.25}
+  .tile-b .br{color:var(--muted);font-size:11.5px;font-weight:500;margin-top:1px}
+  .tile-meta{display:flex;gap:5px;flex-wrap:wrap;margin-top:10px}
+  .brandhdr{display:flex;align-items:baseline;gap:10px;margin:26px 0 12px}
+  .brandhdr h2{font-size:16px} .brandhdr .cnt{color:var(--faint);font-size:12px;font-weight:600}
+
+  /* drawer */
+  .scrim{position:fixed;inset:0;background:rgba(26,21,18,.34);z-index:60;display:flex;justify-content:flex-end}
+  .drawer{width:min(460px,94vw);background:var(--paper);height:100%;overflow:auto;box-shadow:-10px 0 40px rgba(0,0,0,.2)}
+  .drawer-top{height:130px;display:grid;place-items:center;color:#fff;font-weight:800;font-size:40px;position:relative}
+  .x{position:absolute;top:12px;right:12px;width:32px;height:32px;border-radius:9px;border:0;background:rgba(255,255,255,.9);font-size:16px;font-weight:700}
+  .kv{display:flex;justify-content:space-between;gap:14px;padding:10px 0;border-bottom:1px solid var(--line-2);font-size:13px}
+  .kv .k{color:var(--muted)} .kv .v{font-weight:600;text-align:right;max-width:60%;word-break:break-word}
+  .cohort{border:1px solid var(--line);border-radius:var(--r-sm);padding:12px 13px;margin-bottom:9px;background:var(--card)}
+  .cohort .cn{font-size:11px;font-weight:700;color:var(--orange);letter-spacing:.05em;text-transform:uppercase}
+  .cohort .tg{font-size:12.5px;color:var(--muted);margin:5px 0 8px;line-height:1.4}
+  .cohort .hk{font-weight:600;font-size:13.5px;line-height:1.35}
+
+  /* kpi */
+  .kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:14px}
+  .kpi .lab{font-size:12px;color:var(--muted);font-weight:600}
+  .kpi .big{font-size:26px;font-weight:800;letter-spacing:-.02em;margin:6px 0 3px}
+  .kpi .cmp{font-size:11.5px;color:var(--faint);font-weight:500}
+
+  /* bars */
+  .barrow{display:flex;align-items:center;gap:12px;margin:9px 0}
+  .barrow .nm{width:150px;font-size:13px;font-weight:600;flex-shrink:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .bartrack{flex:1;height:22px;background:var(--line-2);border-radius:7px;overflow:hidden}
+  .barfill{height:100%;border-radius:7px;display:flex;align-items:center;justify-content:flex-end;padding-right:8px;color:#fff;font-size:11px;font-weight:700}
+  .barval{width:96px;text-align:right;font-size:13px;font-weight:700;flex-shrink:0}
+
+  .split{display:flex;height:34px;border-radius:9px;overflow:hidden;border:1px solid var(--line)}
+  .split div{display:grid;place-items:center;color:#fff;font-weight:700;font-size:13px}
+  .target-note{font-size:12px;color:var(--muted);margin-top:8px}
+
+  /* table */
+  table{width:100%;border-collapse:collapse}
+  th{text-align:left;font-size:11px;letter-spacing:.05em;text-transform:uppercase;color:var(--faint);font-weight:700;padding:9px 10px;border-bottom:1px solid var(--line)}
+  td{padding:11px 10px;border-bottom:1px solid var(--line-2);font-size:13px;vertical-align:middle}
+  tr:last-child td{border-bottom:0}
+  th.r,td.r{text-align:right}
+  .rank{width:26px;height:26px;border-radius:8px;background:var(--ink);color:#fff;display:grid;place-items:center;font-weight:800;font-size:12px}
+
+  /* verdict */
+  .verdict{font-weight:700;font-size:11.5px;padding:3px 9px;border-radius:20px}
+  .v-good{background:var(--good-soft);color:var(--good)} .v-watch{background:var(--warn-soft);color:var(--warn)} .v-bad{background:var(--bad-soft);color:var(--bad)}
+
+  /* strategy briefs */
+  .brief{border:1px solid var(--line);border-left:4px solid var(--orange);border-radius:var(--r-sm);padding:14px;background:var(--card)}
+  .brief.cat{border-left-color:var(--teal)}
+  .brief .bt{display:flex;justify-content:space-between;align-items:flex-start;gap:8px}
+  .brief h3{margin:0;font-size:14.5px;font-weight:700}
+  .brief .why{font-size:12px;color:var(--muted);margin:3px 0 0}
+  .brief .hkq{font-weight:600;font-size:14px;margin:11px 0 0;padding:9px 11px;background:var(--orange-soft);border-radius:8px;line-height:1.35}
+  .brief.cat .hkq{background:var(--teal-soft)}
+  .brief .rec{font-size:12px;margin-top:9px;display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+
+  /* calendar */
+  .cal{display:grid;grid-template-columns:repeat(7,1fr);gap:6px}
+  .cal .dow{font-size:11px;font-weight:700;color:var(--faint);text-transform:uppercase;letter-spacing:.05em;text-align:center;padding:4px 0}
+  .day{min-height:92px;border:1px solid var(--line);border-radius:9px;padding:6px;background:var(--card);font-size:11px}
+  .day.empty{background:transparent;border:0}
+  .day .dn{font-weight:700;color:var(--muted);font-size:11px;margin-bottom:4px}
+  .send{font-size:10.5px;font-weight:600;padding:2px 5px;border-radius:5px;margin-bottom:3px;color:#fff;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .send.wa{background:#25946b} .send.pn{background:#3b6fd4} .send.em{background:#b6602a}
+  .legend{display:flex;gap:14px;flex-wrap:wrap;align-items:center;font-size:12px;color:var(--muted);margin-top:14px}
+  .dot{width:10px;height:10px;border-radius:3px;display:inline-block;margin-right:5px;vertical-align:middle}
+
+  .toggle{display:inline-flex;align-items:center;gap:7px;border:1px solid var(--line);background:var(--card);border-radius:20px;padding:6px 12px;font-size:12.5px;font-weight:600;color:var(--muted);user-select:none}
+  .toggle.on{background:var(--ink);color:#fff;border-color:var(--ink)}
+
+  .drop{border:2px dashed var(--orange-line);background:var(--orange-soft);border-radius:var(--r);padding:38px;text-align:center;cursor:pointer;transition:background .15s}
+  .drop:hover{background:#FFE9DA}
+  .drop .ic{font-size:34px}
+  .btn{border:0;background:var(--orange);color:#fff;font-weight:700;font-size:13px;padding:10px 16px;border-radius:10px}
+  .btn.ghost{background:var(--card);color:var(--ink);border:1px solid var(--line)}
+  .btn.dark{background:var(--ink)}
+  .note{font-size:12px;color:var(--muted);line-height:1.5}
+  .pill-row{display:flex;gap:7px;flex-wrap:wrap;margin-bottom:16px}
+  .search{border:1px solid var(--line);background:var(--card);border-radius:10px;padding:9px 13px;font-size:13px;font-family:inherit;width:230px;color:var(--ink)}
+  .search:focus{outline:none;border-color:var(--orange-line)}
+  .empty{text-align:center;color:var(--muted);padding:40px;font-size:13.5px}
+  @media(max-width:640px){.barrow .nm{width:96px}.wrap{padding:20px 14px 70px}.top-in{padding:10px 14px}.nav{padding:0 14px}}
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel" data-presets="react">
+const { useState, useMemo, useRef, useEffect } = React;
+const BUILD = "STRAT-1.0.0";
+const USE_MOCK = true;                       // flip to false to pull live from the sales-api
+const API_BASE = "http://localhost:8787";    // sales-api origin (Node/Express -> MySQL)
+
+/* ============================ CATALOG (real HUFT tree, priority order) ============================ */
+// species: Dog|Cat|Lifestyle ; category: Food|Treats|Lifestyle ; owner: HUFT|3P
+// cohorts from the real brief grid: {n, target, hook, offer}
+const C = (n,target,hook,offer)=>({n,target,hook,offer});
+
+const CATALOG = [
+  // ---- DOG · Sara's ----
+  {id:"swf-food", name:"SWF Food", brand:"Sara's", species:"Dog", category:"Food", owner:"HUFT", price:1299, sku:"SWF-FOOD", tags:["fresh","dog","premium"], cohorts:[
+    C(1,"Non-food buyers","Expert balanced food / nutritionist / science angle",false),
+    C(2,"Lapsed Sara's buyers, not purchased in 3+ months","Win-back the lapsed Sara's buyer",true),
+    C(3,"Premium dry food buyers (Acana, Farmina, Taste of the Wild, Royal Canin)","0% Preservatives. 100% Natural. 1000% Love.",true),
+  ]},
+  {id:"swf-broth", name:"SWF Broth", brand:"Sara's", species:"Dog", category:"Food", owner:"HUFT", price:499, sku:"SWF-BROTH", tags:["topper","dog"], cohorts:[
+    C(1,"Previous SWF broth buyers","Back in stock",false),
+    C(2,"Dry food buyers / other broth buyers","Cross-sell broth to dry-food buyers",false),
+    C(3,"Dry food buyers","Topper to any meal, taste they won't stop licking",false),
+  ]},
+  {id:"sara-probiotic", name:"Sara's Probiotic Chews", brand:"Sara's", species:"Dog", category:"Treats", owner:"HUFT", price:699, sku:"SARA-PROBIO", tags:["gut","supplement","dog"], cohorts:[
+    C(1,"All premium-food customers (Acana, Farmina, Sara's, Hearty, Taste of the Wild)","Probiotics that work — launch",false),
+    C(2,"Gastro & hypoallergenic food purchasers // dog parents who bought gut-support probiotics","Target the gut-support intent buyer",true),
+    C(3,"Existing mid-tier kibble purchasers: RC, Farmina","Daily gut support, made effortless",true),
+  ]},
+  {id:"sara-boosters", name:"Sara's Boosters", brand:"Sara's", species:"Dog", category:"Food", owner:"HUFT", price:599, sku:"SARA-BOOST", tags:["topper","dog"], cohorts:[]},
+  {id:"sara-treats", name:"Sara's Treats", brand:"Sara's", species:"Dog", category:"Treats", owner:"HUFT", price:349, sku:"SARA-TREAT", tags:["single-ingredient","dog"], cohorts:[
+    C(1,"All treat buyers","And nothing else / Single-ingredient treats",false),
+    C(2,"Lapsed Sara's treats buyers — not bought in 6 months","Win back lapsed treats buyers",true),
+    C(3,"Treat cart value above ₹1k every month, no Sara's","Real meat, nothing else",true),
+  ]},
+  {id:"sara-gravy", name:"Sara's Gravy", brand:"Sara's", species:"Dog", category:"Food", owner:"HUFT", price:399, sku:"SARA-GRAVY", tags:["gravy","dog"], cohorts:[]},
+
+  // ---- DOG · Hearty ----
+  {id:"hearty-dry", name:"Hearty Dry", brand:"Hearty", species:"Dog", category:"Food", owner:"HUFT", price:1199, sku:"HEART-DRY", tags:["kibble","baked","dog"], cohorts:[
+    C(1,"Premium import kibble buyers (Royal Canin, Farmina, Acana, Orijen)","Baked, not extruded; x% protein, grain free",true),
+    C(2,"Mid-tier dry food buyers (Drools, Josera, Arden Grange)","Trade up the mid-tier kibble buyer",true),
+    C(3,"Lapsed Hearty users, not bought in 3 months","India's cleanest kibble — baked fresh every week",true),
+  ]},
+  {id:"hearty-gravy", name:"Hearty Gravy", brand:"Hearty", species:"Dog", category:"Food", owner:"HUFT", price:429, sku:"HEART-GRAVY", tags:["gravy","dog"], cohorts:[
+    C(1,"Existing gravy buyers","Us vs them, through better ingredients",true),
+    C(2,"Kibble purchasers who don't buy gravy","Attach gravy to the kibble bowl",false),
+    C(3,"Existing Hearty dry food buyers","The meal topper that actually nourishes — made for Hearty bowls",false),
+  ]},
+  {id:"hearty-biscuits", name:"Hearty Biscuits", brand:"Hearty", species:"Dog", category:"Treats", owner:"HUFT", price:299, sku:"HEART-BISC", tags:["biscuit","dog"], cohorts:[
+    C(1,"Mass-market treat buyers (TBD)","The biscuit that's actually good for them",true),
+  ]},
+
+  // ---- DOG · Nutriwag ----
+  {id:"nutriwag-dry", name:"Nutriwag Dry", brand:"Nutriwag", species:"Dog", category:"Food", owner:"HUFT", price:899, sku:"NWAG-DRY", tags:["kibble","daily","dog"], cohorts:[
+    C(1,"Economy kibble upgraders (Chappi, Pedigree)","Daily feeding done right — 60% meat, zero fillers",true),
+    C(2,"Multi-dog households","Right-size the multi-dog bowl",true),
+    C(3,"Lapsed users, not purchased in 3 months","The better kibble, made for daily use, no fillers",true),
+  ]},
+  {id:"nutriwag-wet", name:"Nutriwag Wet", brand:"Nutriwag", species:"Dog", category:"Food", owner:"HUFT", price:449, sku:"NWAG-WET", tags:["wet","dog"], cohorts:[
+    C(1,"Large breed owners","Benefit-led (joint support, muscle support)",false),
+    C(2,"Other gravy users, other fresh-food purchasers (Non-SWF)","Convert non-SWF fresh-food buyers",true),
+  ]},
+  {id:"nutriwag-pro", name:"Nutriwag Pro", brand:"Nutriwag", species:"Dog", category:"Food", owner:"HUFT", price:1099, sku:"NWAG-PRO", tags:["pro","dog"], cohorts:[]},
+  {id:"nutriwag-treats", name:"Nutriwag Treats", brand:"Nutriwag", species:"Dog", category:"Treats", owner:"HUFT", price:279, sku:"NWAG-TREAT", tags:["treats","dog"], cohorts:[
+    C(1,"Dogaholic, Gnawlers, Jerhigh purchasers","Treats at xx% off for your pet",true),
+    C(2,"Nutriwag purchasers","Attach treats to the Nutriwag buyer",false),
+  ]},
+
+  // ---- DOG · Standalone Treats ----
+  {id:"yakies", name:"Yakies", brand:"Standalone Treats", species:"Dog", category:"Treats", owner:"HUFT", price:399, sku:"YAKIES", tags:["chew","veg","dog"], cohorts:[
+    C(1,"Lapsed buyers who haven't bought Yakies in 6+ months","Forever companion for your dog",true),
+    C(2,"Buyers of enrichment tools, canine craving chews","Cross-sell to the enrichment buyer",false),
+    C(3,"Vegetarian food & treat purchasers","100% vegetarian, long-lasting chew",false),
+  ]},
+  {id:"yumnums", name:"Yum Nums", brand:"Standalone Treats", species:"Dog", category:"Treats", owner:"HUFT", price:249, sku:"YUMNUMS", tags:["soft","training","dog"], cohorts:[
+    C(1,"Puppy/dog parents, dog < 2 years","Train without guilt",false),
+    C(2,"Buyers of multiple treat brands over last 3 months","Consolidate the multi-brand treat buyer",false),
+    C(3,"Senior dogs, small breeds","Soft treats, maximum love",false),
+  ]},
+  {id:"yimt", name:"YIMT", brand:"Standalone Treats", species:"Dog", category:"Treats", owner:"HUFT", price:229, sku:"YIMT", tags:["gluten-free","dog"], cohorts:[
+    C(1,"All treat buyers","All flavour. No guilt. Gluten free.",false),
+    C(2,"Purchasers who buy treats every month","Reward the monthly treat buyer",false),
+  ]},
+  {id:"chewbarks", name:"Chew Barks", brand:"Standalone Treats", species:"Dog", category:"Treats", owner:"HUFT", price:319, sku:"CHEWBARK", tags:["jerky","protein","dog"], cohorts:[
+    C(1,"Buyers of multiple treat brands over last 3 months","The cleaner jerky, high protein",false),
+    C(2,"Senior dogs, small breeds","Right-size for senior & small breeds",false),
+  ]},
+  {id:"barkery", name:"Barkery", brand:"Standalone Treats", species:"Dog", category:"Treats", owner:"HUFT", price:279, sku:"BARKERY", tags:["bakery","dog"], cohorts:[
+    C(1,"SWF / Acana / Farmina / N&D purchasers","Healthy treats, 100% heart",false),
+  ]},
+  {id:"treats-portfolio", name:"Treats Portfolio", brand:"Standalone Treats", species:"Dog", category:"Treats", owner:"HUFT", price:699, sku:"TREATS-PF", tags:["bundle","dog"], cohorts:[
+    C(1,"Treat buyers who haven't yet purchased HUFT treats","Something for every dog. Something good in every bite.",true),
+  ]},
+
+  // ---- CAT · Meowsi ----
+  {id:"meowsi-wet", name:"Meowsi Wet Food", brand:"Meowsi Food", species:"Cat", category:"Food", owner:"HUFT", price:449, sku:"MEOW-WET", tags:["wet","cat"], cohorts:[
+    C(1,"Existing wet/gravy buyers — Sheba/RC/Farmina","Real ingredients, real taste — every meal, every day. Benefit-led.",false),
+    C(2,"Lapsed Meowsi Food buyers (not bought in 3 months)","Your cat's new favourite mealtime ritual",true),
+    C(3,"Dry food buyers who haven't tried wet — Farmina/RC/Sheba","Topper to any meal — taste they won't stop meowing for",false),
+  ]},
+  {id:"meowsi-crunchy", name:"Meowsi Crunchy Treats", brand:"Meowsi Treats", species:"Cat", category:"Treats", owner:"HUFT", price:299, sku:"MEOW-CRUNCH", tags:["crunchy","cat"], cohorts:[
+    C(1,"All treat buyers","And nothing else / Single-ingredient treats",false),
+    C(2,"Lapsed Meowsi treat buyers (not bought in 3 months)","Combo-pack-led approach for variety",true),
+    C(3,"All treat buyers, non-Meowsi customers","Real meat. Nothing else. Healthy & tasty.",false),
+  ]},
+  {id:"meowsi-soft", name:"Meowsi Soft Treats", brand:"Meowsi Treats", species:"Cat", category:"Treats", owner:"HUFT", price:299, sku:"MEOW-SOFT", tags:["soft","cat"], cohorts:[
+    C(1,"All treat buyers","Soft, irresistible, and actually good for them. Superior ingredient quality.",false),
+    C(2,"Lapsed Meowsi treat customers (>3 months)","Combo-pack-led approach for variety",true),
+    C(3,"Buyers of multiple treat brands in the last 3 months","Even the pickiest cat can't say no",true),
+  ]},
+
+  // ---- CAT · Nutrimeow ----
+  {id:"nutrimeow-dry", name:"Nutrimeow Dry", brand:"Nutrimeow", species:"Cat", category:"Food", owner:"HUFT", price:749, sku:"NMEOW-DRY", tags:["kibble","cat"], cohorts:[
+    C(1,"Economy kibble buyers — Whiskas, Friskies, Me-O","Daily feeding done right — no corn, soy or preservatives",false),
+    C(2,"Economy kibble buyers — Whiskas, Friskies, Me-O","The better kibble, made for daily use — no fillers",true),
+    C(3,"Nutrimeow lapsed customers — last month","No fillers, real nutrition",true),
+  ]},
+  {id:"nutrimeow-wet", name:"Nutrimeow Wet / Gravy", brand:"Nutrimeow", species:"Cat", category:"Food", owner:"HUFT", price:399, sku:"NMEOW-WET", tags:["gravy","cat"], cohorts:[
+    C(1,"All gravy food buyers","Daily meals with real benefits — better quality, same price",false),
+    C(2,"Other gravy brand customers — Whiskas/Me-O/Felix","Switch to cleaner nutrition",true),
+    C(3,"Nutrimeow lapsed customers — last 3 months","Daily feeding done right — no fillers, only goodness",true),
+  ]},
+
+  // ---- LIFESTYLE (HUFT) ----
+  {id:"life-grooming", name:"Grooming", brand:"Lifestyle", species:"Lifestyle", category:"Lifestyle", owner:"HUFT", price:599, sku:"LIFE-GROOM", tags:["grooming"], cohorts:[]},
+  {id:"life-toys", name:"Toys", brand:"Lifestyle", species:"Lifestyle", category:"Lifestyle", owner:"HUFT", price:499, sku:"LIFE-TOYS", tags:["toys","play"], cohorts:[]},
+  {id:"life-clh", name:"CLH (Clothing)", brand:"Lifestyle", species:"Lifestyle", category:"Lifestyle", owner:"HUFT", price:899, sku:"LIFE-CLH", tags:["apparel","wearables"], cohorts:[]},
+  {id:"life-acc", name:"Accessories", brand:"Lifestyle", species:"Lifestyle", category:"Lifestyle", owner:"HUFT", price:699, sku:"LIFE-ACC", tags:["accessories","wearables"], cohorts:[]},
+
+  // ---- 3P (placeholder — populate from catalog feed) ----
+  {id:"p3-royalcanin", name:"Royal Canin", brand:"3P Food", species:"Dog", category:"Food", owner:"3P", price:1499, sku:"3P-RC", tags:["kibble","import"], cohorts:[]},
+  {id:"p3-farmina", name:"Farmina N&D", brand:"3P Food", species:"Dog", category:"Food", owner:"3P", price:1899, sku:"3P-FARM", tags:["kibble","import"], cohorts:[]},
+  {id:"p3-sheba", name:"Sheba", brand:"3P Food", species:"Cat", category:"Food", owner:"3P", price:399, sku:"3P-SHEBA", tags:["wet","cat"], cohorts:[]},
+  {id:"p3-drools", name:"Drools", brand:"3P Food", species:"Dog", category:"Food", owner:"3P", price:799, sku:"3P-DROOLS", tags:["kibble"], cohorts:[]},
+];
+
+/* ============================ DATA LAYER (mock; swap fetchers for USE_MOCK=false) ============================ */
+function seed(str){let h=2166136261;for(let i=0;i<str.length;i++){h^=str.charCodeAt(i);h=Math.imul(h,16777619)}return (h>>>0)}
+function rnd(str){return (seed(str)%10000)/10000}
+
+// deterministic mock sales per product for the three windows
+function mockSales(){
+  return CATALOG.map(p=>{
+    const catBase = p.category==="Food"?1400 : p.category==="Treats"?800 : 500;
+    const own = p.owner==="3P"?0.5:1;
+    const emptyPenalty = p.cohorts.length? 1 : 0.55; // un-briefed SKUs sell softer in mock
+    const unitsLM = Math.round((catBase*(0.4+rnd(p.id)*1.4))*own*emptyPenalty);
+    const unitsLY = Math.round(unitsLM*(0.68+rnd(p.id+"ly")*0.30));
+    const unitsTQ = Math.round(unitsLM*(2.7+rnd(p.id+"tq")*0.7));
+    const d2cShare = 0.55+rnd(p.id+"ch")*0.30;
+    return {...p,
+      lm:{units:unitsLM, rev:unitsLM*p.price},
+      ly:{units:unitsLY, rev:unitsLY*p.price},
+      tq:{units:unitsTQ, rev:unitsTQ*p.price},
+      d2cShare};
+  });
+}
+let SALES = mockSales();
+function P(row,period){return row[period]||{units:0,rev:0}} // period: 'lm'|'ly'|'tq'
+
+// combo-buy affinity (2–3 product co-purchase) -> auto-suggested cohorts
+let AFFINITY = [
+  {items:["swf-food","sara-probiotic"], name:"Premium gut-health dog parents", size:4820, lift:3.4, push:"sara-probiotic", why:"Buy SWF Food + then add Probiotic Chews within 30 days"},
+  {items:["hearty-dry","hearty-gravy"], name:"Full-bowl Hearty households", size:3110, lift:2.8, push:"hearty-gravy", why:"Hearty Dry buyers who attach gravy"},
+  {items:["nutriwag-dry","nutriwag-treats"], name:"Everyday value multi-dog homes", size:5240, lift:2.1, push:"nutriwag-treats", why:"Daily-kibble buyers adding treats"},
+  {items:["meowsi-wet","nutrimeow-dry"], name:"Complete-meal cat households", size:2680, lift:3.0, push:"meowsi-wet", why:"Wet + dry rotation, high replenishment"},
+  {items:["meowsi-crunchy","meowsi-soft"], name:"Meowsi treat variety seekers", size:1990, lift:2.6, push:"meowsi-soft", why:"Crunchy buyers who cross to soft — combo-pack ready"},
+  {items:["swf-food","hearty-dry","sara-treats"], name:"Premium-loyal, treat-light", size:1240, lift:2.2, push:"sara-treats", why:"High food AOV but no Sara's treats attach"},
+  {items:["yakies","chewbarks"], name:"Long-chew enrichment buyers", size:2070, lift:1.9, push:"treats-portfolio", why:"Chew-led buyers, portfolio upsell"},
+  {items:["nutrimeow-wet","meowsi-crunchy"], name:"Value cat, treat-curious", size:1530, lift:2.4, push:"meowsi-crunchy", why:"Nutrimeow gravy buyers with no treats yet"},
+];
+
+// last-month assets (CleverTap-fed performance) — verdict drives retrospective
+function mockAssets(){
+  const base = [
+    {id:"a1", pid:"swf-food", cohortN:3, ch:"WA", aud:"D2C", offer:true},
+    {id:"a2", pid:"hearty-dry", cohortN:1, ch:"Email", aud:"D2C", offer:true},
+    {id:"a3", pid:"sara-probiotic", cohortN:1, ch:"PN", aud:"D2C", offer:false},
+    {id:"a4", pid:"meowsi-wet", cohortN:2, ch:"WA", aud:"D2C", offer:true},
+    {id:"a5", pid:"nutriwag-dry", cohortN:1, ch:"PN", aud:"Retail", offer:true},
+    {id:"a6", pid:"sara-treats", cohortN:2, ch:"Email", aud:"D2C", offer:true},
+    {id:"a7", pid:"nutrimeow-dry", cohortN:2, ch:"WA", aud:"D2C", offer:true},
+    {id:"a8", pid:"yakies", cohortN:1, ch:"PN", aud:"D2C", offer:true},
+    {id:"a9", pid:"hearty-gravy", cohortN:2, ch:"Email", aud:"Retail", offer:false},
+    {id:"a10", pid:"meowsi-crunchy", cohortN:2, ch:"WA", aud:"D2C", offer:true},
+    {id:"a11", pid:"nutriwag-treats", cohortN:1, ch:"PN", aud:"D2C", offer:true},
+    {id:"a12", pid:"yimt", cohortN:1, ch:"Email", aud:"D2C", offer:false},
+  ];
+  return base.map(a=>{
+    const p = CATALOG.find(x=>x.id===a.pid)||{};
+    const sent = 8000+Math.round(rnd(a.id)*42000);
+    const ctr = 1.4+rnd(a.id+"c")*6.2;              // %
+    const conv = 0.5+rnd(a.id+"v")*3.4;             // %
+    const rev = Math.round(sent*(conv/100)*(p.price||400));
+    const verdict = ctr>4.5&&conv>1.8 ? "good" : (ctr<2.6||conv<1.0? "bad":"watch");
+    return {...a, name:p.name, species:p.species, category:p.category, hook:(p.cohorts&&p.cohorts[a.cohortN-1]?p.cohorts[a.cohortN-1].hook:"—"), sent, ctr, conv, rev, verdict};
+  });
+}
+let ASSETS = mockAssets();
+
+/* ---- live fetchers (USE_MOCK=false). Endpoint paths mirror Supabase RPC convention. ---- */
+async function rpc(name){
+  const r = await fetch(`${API_BASE}/rest/v1/rpc/${name}`);
+  if(!r.ok) throw new Error(name+" "+r.status);
+  return r.json();
+}
+// API returns per-node {id, lm:{units,rev}, ly:{...}, tq:{...}, d2cShare?}; join to CATALOG for name/brand/cohorts.
+async function fetchSales(){
+  const rows = await rpc("strategy_sales_by_product");
+  const byId = {}; rows.forEach(x=>byId[x.id]=x);
+  return CATALOG.map(p=>{
+    const s = byId[p.id]||{};
+    const z = {units:0,rev:0};
+    return {...p, lm:s.lm||z, ly:s.ly||z, tq:s.tq||z, d2cShare:(s.d2cShare!=null?s.d2cShare:0.6)};
+  });
+}
+async function fetchAffinity(){
+  const rows = await rpc("strategy_combo_affinity"); // [{items:[id..], name, size, lift, push, why}]
+  return rows;
+}
+async function loadData(){
+  if(USE_MOCK) return {ok:true};
+  const [sales, aff] = await Promise.all([fetchSales(), fetchAffinity().catch(()=>AFFINITY)]);
+  SALES = sales; AFFINITY = aff;                     // ASSETS stays CleverTap-CSV-fed (Upload tab)
+  return {ok:true};
+}
+
+/* ============================ helpers ============================ */
+const INR = n => "₹"+Math.round(n).toLocaleString("en-IN");
+const K = n => n>=100000? "₹"+(n/100000).toFixed(1)+"L" : n>=1000? "₹"+(n/1000).toFixed(1)+"k" : "₹"+n;
+const speciesColor = s => s==="Dog"?"#FF6D1F": s==="Cat"?"#0E8C82":"#6B54B8";
+const initials = n => n.replace(/[^A-Za-z ]/g,"").split(" ").filter(Boolean).slice(0,2).map(w=>w[0]).join("").toUpperCase();
+function pct(a,b){ if(!b) return {t:"—",cls:"flat"}; const d=(a-b)/b*100; return {t:(d>=0?"+":"")+d.toFixed(1)+"%", cls:d>0.5?"up":d<-0.5?"down":"flat"} }
+function speciesChip(s){return <span className={"chip "+(s==="Dog"?"dog":s==="Cat"?"cat":"life")}>{s}</span>}
+function catChip(c){return <span className={"chip "+(c==="Food"?"food":c==="Treats"?"treats":"life")}>{c}</span>}
+
+const PERIODS = [{k:"lm",l:"Last month"},{k:"ly",l:"Same month LY"},{k:"tq",l:"This quarter"}];
+const cmpKey = p => p==="ly" ? "lm" : "ly"; // compare selected against this
+
+/* ============================ CATALOG ============================ */
+function Catalog(){
+  const [sp,setSp]=useState("All"); const [own,setOwn]=useState("All"); const [cat,setCat]=useState("All");
+  const [q,setQ]=useState(""); const [sel,setSel]=useState(null);
+  const filtered = CATALOG.filter(p=>
+    (sp==="All"||p.species===sp)&&(own==="All"||p.owner===own)&&(cat==="All"||p.category===cat)&&
+    (q===""||p.name.toLowerCase().includes(q.toLowerCase())||p.brand.toLowerCase().includes(q.toLowerCase()))
+  );
+  const groups = [];
+  filtered.forEach(p=>{const g=groups.find(x=>x.brand===p.brand&&x.species===p.species); if(g)g.items.push(p); else groups.push({brand:p.brand,species:p.species,items:[p]})});
+  const Pill=({v,cur,set,children})=><button className={"toggle "+(cur===v?"on":"")} onClick={()=>set(v)}>{children}</button>;
+  return <div>
+    <h1>Product catalog</h1>
+    <p className="sub">Every SKU as a tile with image + mapped attributes. HUFT-owned first, priority order, then 3P.</p>
+    <div className="pill-row">
+      <Pill v="All" cur={sp} set={setSp}>All species</Pill><Pill v="Dog" cur={sp} set={setSp}>🐕 Dog</Pill><Pill v="Cat" cur={sp} set={setSp}>🐈 Cat</Pill><Pill v="Lifestyle" cur={sp} set={setSp}>Lifestyle</Pill>
+    </div>
+    <div className="pill-row">
+      <Pill v="All" cur={own} set={setOwn}>All owners</Pill><Pill v="HUFT" cur={own} set={setOwn}>HUFT-owned</Pill><Pill v="3P" cur={own} set={setOwn}>3P</Pill>
+      <span style={{width:12}}/>
+      <Pill v="All" cur={cat} set={setCat}>All categories</Pill><Pill v="Food" cur={cat} set={setCat}>Food</Pill><Pill v="Treats" cur={cat} set={setCat}>Treats</Pill><Pill v="Lifestyle" cur={cat} set={setCat}>Lifestyle</Pill>
+      <span style={{flex:1}}/>
+      <input className="search" placeholder="Search product or brand…" value={q} onChange={e=>setQ(e.target.value)}/>
+    </div>
+    {groups.length===0 && <div className="empty">No products match these filters.</div>}
+    {groups.map(g=><div key={g.brand+g.species}>
+      <div className="brandhdr">{speciesChip(g.species)}<h2>{g.brand}</h2><span className="cnt">{g.items.length} SKU{g.items.length>1?"s":""}</span></div>
+      <div className="tiles">
+        {g.items.map(p=><div className="tile" key={p.id} onClick={()=>setSel(p)}>
+          <div className="thumb" style={{background:`linear-gradient(135deg, ${speciesColor(p.species)}, ${speciesColor(p.species)}cc)`}}>
+            {initials(p.name)}
+            <span className="own">{p.owner==="3P"?<span className="chip p3">3P</span>:<span className="chip" style={{background:"rgba(255,255,255,.9)",color:"#C4531A",border:0}}>HUFT</span>}</span>
+          </div>
+          <div className="tile-b">
+            <div className="nm">{p.name}</div>
+            <div className="br">{p.brand} · {p.sku}</div>
+            <div className="tile-meta">
+              {catChip(p.category)}
+              <span className="chip">{INR(p.price)}</span>
+              {p.price>=699 && <span className="chip mov">MOV ✓</span>}
+              {p.cohorts.length>0 && <span className="chip">{p.cohorts.length} cohort{p.cohorts.length>1?"s":""}</span>}
+              {p.cohorts.some(c=>c.offer) && <span className="chip offer">offer-led</span>}
+            </div>
+          </div>
+        </div>)}
+      </div>
+    </div>)}
+    {sel && <ProductDrawer p={sel} onClose={()=>setSel(null)}/>}
+  </div>;
+}
+
+function ProductDrawer({p,onClose}){
+  const s = SALES.find(x=>x.id===p.id);
+  return <div className="scrim" onClick={onClose}>
+    <div className="drawer" onClick={e=>e.stopPropagation()}>
+      <div className="drawer-top" style={{background:`linear-gradient(135deg, ${speciesColor(p.species)}, ${speciesColor(p.species)}bb)`}}>
+        {initials(p.name)}<button className="x" onClick={onClose}>✕</button>
+      </div>
+      <div className="pad">
+        <div className="row" style={{gap:6,marginBottom:10}}>{speciesChip(p.species)}{catChip(p.category)}<span className={"chip "+(p.owner==="3P"?"p3":"")}>{p.owner}</span></div>
+        <h1 style={{fontSize:20}}>{p.name}</h1>
+        <p className="sub" style={{marginBottom:16}}>{p.brand}</p>
+        <div className="kv"><span className="k">Price (item_price)</span><span className="v">{INR(p.price)}</span></div>
+        <div className="kv"><span className="k">SKU (cookie_id)</span><span className="v">{p.sku}</span></div>
+        <div className="kv"><span className="k">Category (product.type)</span><span className="v">{p.category}</span></div>
+        <div className="kv"><span className="k">Brand (vendor)</span><span className="v">{p.brand}</span></div>
+        <div className="kv"><span className="k">Tags</span><span className="v">{p.tags.join(", ")}</span></div>
+        <div className="kv"><span className="k">MOV eligible (≥₹699)</span><span className="v">{p.price>=699?"Yes":"No"}</span></div>
+        {s && <div className="kv"><span className="k">Units — last month</span><span className="v">{s.lm.units.toLocaleString("en-IN")} · {K(s.lm.rev)}</span></div>}
+        <div className="eyebrow" style={{margin:"20px 0 10px"}}>Cohort briefs ({p.cohorts.length})</div>
+        {p.cohorts.length===0 && <div className="note">No cohort briefs defined yet — flagged in Strategy as an un-briefed SKU.</div>}
+        {p.cohorts.map(c=><div className="cohort" key={c.n}>
+          <div className="cn">Cohort {c.n} {c.offer&&<span className="chip offer" style={{marginLeft:6}}>offer-led</span>}</div>
+          <div className="tg">{c.target}</div>
+          <div className="hk">“{c.hook}”</div>
+        </div>)}
+      </div>
+    </div>
+  </div>;
+}
+
+/* ============================ SALES INSIGHTS ============================ */
+function SalesInsights({period}){
+  const cmp = cmpKey(period);
+  const tot = SALES.reduce((a,r)=>({rev:a.rev+P(r,period).rev, units:a.units+P(r,period).units}),{rev:0,units:0});
+  const totC = SALES.reduce((a,r)=>({rev:a.rev+P(r,cmp).rev, units:a.units+P(r,cmp).units}),{rev:0,units:0});
+  const orders = Math.round(tot.units/2.3), ordersC = Math.round(totC.units/2.3);
+  const aov = tot.rev/Math.max(1,orders), aovC = totC.rev/Math.max(1,ordersC);
+  const dRev=pct(tot.rev,totC.rev), dU=pct(tot.units,totC.units), dO=pct(orders,ordersC), dA=pct(aov,aovC);
+  const cmpLabel = PERIODS.find(x=>x.k===cmp).l;
+
+  const bySpecies = ["Dog","Cat","Lifestyle"].map(s=>({s,rev:SALES.filter(r=>r.species===s).reduce((a,r)=>a+P(r,period).rev,0)}));
+  const speciesTot = bySpecies.reduce((a,b)=>a+b.rev,0);
+  const dogPct = Math.round(bySpecies[0].rev/speciesTot*100), catPct=Math.round(bySpecies[1].rev/speciesTot*100), lifePct=100-dogPct-catPct;
+
+  const byCat = ["Food","Treats","Lifestyle"].map(c=>({c,rev:SALES.filter(r=>r.category===c).reduce((a,r)=>a+P(r,period).rev,0)}));
+  const catMax = Math.max(...byCat.map(x=>x.rev));
+
+  const top = [...SALES].sort((a,b)=>P(b,period).rev-P(a,period).rev).slice(0,8);
+  const d2cRev = SALES.reduce((a,r)=>a+P(r,period).rev*r.d2cShare,0);
+  const d2cPct = Math.round(d2cRev/tot.rev*100);
+
+  const Kpi=({lab,val,d})=><div className="card pad kpi">
+    <div className="lab">{lab}</div><div className="big">{val}</div>
+    <div className="cmp"><span className={"delta "+d.cls}>{d.t}</span> vs {cmpLabel}</div>
+  </div>;
+
+  return <div>
+    <div className="kpis" style={{marginBottom:16}}>
+      <Kpi lab="Revenue" val={K(tot.rev)} d={dRev}/>
+      <Kpi lab="Orders" val={orders.toLocaleString("en-IN")} d={dO}/>
+      <Kpi lab="Units" val={tot.units.toLocaleString("en-IN")} d={dU}/>
+      <Kpi lab="AOV" val={INR(aov)} d={dA}/>
+    </div>
+    <div className="row" style={{alignItems:"stretch"}}>
+      <div className="card pad" style={{flex:"1 1 340px"}}>
+        <div className="eyebrow">Dog vs Cat mix</div><h2 style={{marginTop:4}}>Revenue share this period</h2>
+        <div className="split" style={{marginTop:14}}>
+          <div style={{width:dogPct+"%",background:"#FF6D1F"}}>{dogPct>8?`Dog ${dogPct}%`:""}</div>
+          <div style={{width:catPct+"%",background:"#0E8C82"}}>{catPct>8?`Cat ${catPct}%`:""}</div>
+          <div style={{width:lifePct+"%",background:"#6B54B8"}}>{lifePct>8?`${lifePct}%`:""}</div>
+        </div>
+        <div className="target-note">Strategy target is <b>Dog 60 / Cat 40</b>. Current Dog {dogPct}% · Cat {catPct}% {dogPct>62?"— dog over-indexed, rebalance toward cat.":dogPct<58?"— dog under target, push priority dog SKUs.":"— on target."}</div>
+      </div>
+      <div className="card pad" style={{flex:"1 1 300px"}}>
+        <div className="eyebrow">Channel</div><h2 style={{marginTop:4}}>D2C vs Retail</h2>
+        <div className="split" style={{marginTop:14}}>
+          <div style={{width:d2cPct+"%",background:"#1A1512"}}>D2C {d2cPct}%</div>
+          <div style={{width:(100-d2cPct)+"%",background:"#B7ADA4"}}>Retail {100-d2cPct}%</div>
+        </div>
+        <div className="target-note">Channel derived from order payload <code>Channel</code> field. Retail split feeds the calendar D2C/Retail filter.</div>
+      </div>
+    </div>
+    <div className="card pad" style={{marginTop:14}}>
+      <div className="eyebrow">Category mix</div><h2 style={{marginTop:4,marginBottom:12}}>Revenue by category priority</h2>
+      {byCat.map((x,i)=><div className="barrow" key={x.c}>
+        <div className="nm">{i+1}. {x.c}</div>
+        <div className="bartrack"><div className="barfill" style={{width:Math.max(6,x.rev/catMax*100)+"%",background:i===0?"#FF6D1F":i===1?"#C77D12":"#6B54B8"}}></div></div>
+        <div className="barval">{K(x.rev)}</div>
+      </div>)}
+    </div>
+    <div className="card" style={{marginTop:14}}>
+      <div className="pad" style={{paddingBottom:6}}><div className="eyebrow">Leaderboard</div><h2 style={{marginTop:4}}>Top products · {PERIODS.find(x=>x.k===period).l}</h2></div>
+      <div style={{padding:"0 8px 8px"}}><table>
+        <thead><tr><th>#</th><th>Product</th><th>Brand</th><th className="r">Units</th><th className="r">Revenue</th><th className="r">vs {cmpLabel}</th></tr></thead>
+        <tbody>{top.map((r,i)=>{const d=pct(P(r,period).rev,P(r,cmp).rev);return <tr key={r.id}>
+          <td><span className="rank">{i+1}</span></td>
+          <td><b>{r.name}</b> {speciesChip(r.species)}</td>
+          <td style={{color:"var(--muted)"}}>{r.brand}</td>
+          <td className="r">{P(r,period).units.toLocaleString("en-IN")}</td>
+          <td className="r"><b>{K(P(r,period).rev)}</b></td>
+          <td className="r"><span className={"delta "+d.cls}>{d.t}</span></td>
+        </tr>})}</tbody>
+      </table></div>
+    </div>
+  </div>;
+}
+
+/* ============================ AUDIENCE COHORTS ============================ */
+function AudienceCohorts(){
+  const defined = CATALOG.filter(p=>p.cohorts.length>0);
+  const totalCohorts = defined.reduce((a,p)=>a+p.cohorts.length,0);
+  return <div>
+    <div className="card pad" style={{marginBottom:16,background:"linear-gradient(135deg,#FFF6EF,#FFFFFF)"}}>
+      <div className="eyebrow">Auto-suggested cohorts</div>
+      <h2 style={{marginTop:4}}>Built from 2–3 product combo-buys</h2>
+      <p className="note" style={{marginTop:4}}>Co-purchase affinity across the sales feed. Each suggestion names the group, its size, the lift over baseline, and the product to push next.</p>
+    </div>
+    <div className="grid" style={{gridTemplateColumns:"repeat(auto-fill,minmax(300px,1fr))"}}>
+      {AFFINITY.map((a,i)=>{const push=CATALOG.find(x=>x.id===a.push); return <div className="card pad" key={i}>
+        <div className="row" style={{justifyContent:"space-between",alignItems:"flex-start",gap:8}}>
+          <div><div className="eyebrow">Cohort {String(i+1).padStart(2,"0")}</div><h2 style={{marginTop:3}}>{a.name}</h2></div>
+          <span className="chip mov">×{a.lift} lift</span>
+        </div>
+        <div className="row" style={{gap:6,margin:"10px 0"}}>{a.items.map(id=>{const it=CATALOG.find(x=>x.id===id);return <span className="chip" key={id}>{it?it.name:id}</span>})}</div>
+        <div className="note">{a.why}</div>
+        <div className="row" style={{justifyContent:"space-between",alignItems:"center",marginTop:12,paddingTop:12,borderTop:"1px solid var(--line-2)"}}>
+          <span style={{fontSize:13}}><b>{a.size.toLocaleString("en-IN")}</b> <span style={{color:"var(--muted)"}}>customers</span></span>
+          <span style={{fontSize:12.5}}>Push → <b>{push?push.name:a.push}</b></span>
+        </div>
+      </div>})}
+    </div>
+    <div className="card pad" style={{marginTop:18}}>
+      <div className="eyebrow">Defined audience groups</div>
+      <h2 style={{marginTop:4,marginBottom:2}}>{totalCohorts} briefed cohorts across {defined.length} SKUs</h2>
+      <p className="note" style={{marginBottom:14}}>These are the hand-defined cohorts from the brief grid — the targeting definitions Strategy draws from.</p>
+      <table>
+        <thead><tr><th>Product</th><th>Cohort 1</th><th>Cohort 2</th><th>Cohort 3</th></tr></thead>
+        <tbody>{defined.map(p=><tr key={p.id}>
+          <td><b>{p.name}</b><br/><span style={{color:"var(--muted)",fontSize:11.5}}>{p.brand}</span></td>
+          {[0,1,2].map(i=><td key={i} style={{fontSize:12,color:"var(--muted)",maxWidth:220}}>{p.cohorts[i]?p.cohorts[i].target:"—"}</td>)}
+        </tr>)}</tbody>
+      </table>
+    </div>
+  </div>;
+}
+
+/* ============================ PRIORITIES ============================ */
+const CAT_WEIGHT = {Food:3, Treats:2, Lifestyle:1};
+const SPECIES_WEIGHT = {Dog:0.60, Cat:0.40, Lifestyle:0.15};
+function priorityScore(row,period){
+  const rev = P(row,period).rev;
+  const revScore = Math.log10(rev+10);                 // dampen scale
+  const briefReady = row.cohorts.length? 1.2 : 0.6;
+  return revScore * CAT_WEIGHT[row.category] * (SPECIES_WEIGHT[row.species]||0.15) * briefReady * (row.owner==="HUFT"?1.15:0.8);
+}
+function Priorities({period}){
+  const ranked = [...SALES].filter(r=>r.owner==="HUFT").map(r=>({...r,score:priorityScore(r,period)})).sort((a,b)=>b.score-a.score).slice(0,14);
+  return <div>
+    <div className="card pad" style={{marginBottom:16}}>
+      <div className="eyebrow">Prioritisation rules</div><h2 style={{marginTop:4,marginBottom:10}}>What ranks a SKU</h2>
+      <div className="row" style={{gap:8}}>
+        <span className="chip dog">Dog 60%</span><span className="chip cat">Cat 40%</span>
+        <span className="chip food">1. Food</span><span className="chip treats">2. Treats</span><span className="chip life">3. Lifestyle</span>
+        <span className="chip mov">MOV ₹699</span><span className="chip">Brief-ready boost</span><span className="chip">HUFT-owned boost</span>
+      </div>
+      <p className="note" style={{marginTop:10}}>Rank = revenue (log) × category weight (Food 3 / Treats 2 / Lifestyle 1) × species weight (Dog .60 / Cat .40) × brief-readiness × ownership. Un-briefed SKUs are penalised so Strategy surfaces the gap.</p>
+    </div>
+    <div className="card">
+      <div className="pad" style={{paddingBottom:6}}><h2>Priority order · {PERIODS.find(x=>x.k===period).l}</h2></div>
+      <div style={{padding:"0 8px 8px"}}><table>
+        <thead><tr><th>#</th><th>Product</th><th>Species</th><th>Category</th><th className="r">Revenue</th><th>Readiness</th></tr></thead>
+        <tbody>{ranked.map((r,i)=><tr key={r.id}>
+          <td><span className="rank">{i+1}</span></td>
+          <td><b>{r.name}</b> <span style={{color:"var(--muted)",fontSize:11.5}}>· {r.brand}</span></td>
+          <td>{speciesChip(r.species)}</td>
+          <td>{catChip(r.category)}</td>
+          <td className="r"><b>{K(P(r,period).rev)}</b></td>
+          <td>{r.cohorts.length? <span className="verdict v-good">{r.cohorts.length} briefs</span> : <span className="verdict v-bad">un-briefed</span>}</td>
+        </tr>)}</tbody>
+      </table></div>
+    </div>
+  </div>;
+}
+
+/* ============================ STRATEGY ============================ */
+function buildPlan(period, assets){
+  // rank HUFT SKUs, respect Dog 60 / Cat 40 and category priority, prefer offer-led cohorts, fold in retrospective
+  const perf = {}; assets.forEach(a=>{perf[a.pid]=perf[a.pid]||[]; perf[a.pid].push(a)});
+  const pool = SALES.filter(r=>r.owner==="HUFT"&&r.cohorts.length>0).map(r=>({...r,score:priorityScore(r,period)})).sort((a,b)=>b.score-a.score);
+  const target = {Dog:6, Cat:4};                       // 60/40 across a 10-slot plan
+  const picked = {Dog:0, Cat:0}; const plan=[];
+  const catOrder={Food:0,Treats:1,Lifestyle:2};
+  pool.sort((a,b)=> (catOrder[a.category]-catOrder[b.category]) || (b.score-a.score));
+  for(const r of pool){
+    if(r.species==="Lifestyle") continue;
+    if(picked[r.species]>=target[r.species]) continue;
+    const past = perf[r.id];
+    const worked = past && past.some(x=>x.verdict==="good");
+    const failed = past && past.every(x=>x.verdict==="bad");
+    // choose cohort: repeat a winner, otherwise prefer offer-led, else cohort 1
+    let cohort;
+    if(worked){ const w=past.find(x=>x.verdict==="good"); cohort=r.cohorts[w.cohortN-1]||r.cohorts[0]; }
+    else { cohort = r.cohorts.find(c=>c.offer) || r.cohorts[0]; }
+    plan.push({...r, cohort, worked, failed, past});
+    picked[r.species]++;
+    if(picked.Dog>=target.Dog&&picked.Cat>=target.Cat) break;
+  }
+  return plan;
+}
+function Strategy({period}){
+  const assets = ASSETS;
+  const plan = useMemo(()=>buildPlan(period,assets),[period,assets]);
+  const wins = assets.filter(a=>a.verdict==="good").sort((a,b)=>b.rev-a.rev);
+  const flops = assets.filter(a=>a.verdict==="bad").sort((a,b)=>a.conv-b.conv);
+  return <div>
+    <h1>Strategy</h1>
+    <p className="sub">Data-driven monthly plan. Respects the split + category priority, prefers offer-led cohorts, and folds in what worked last month.</p>
+
+    <div className="card pad" style={{marginBottom:18}}>
+      <div className="eyebrow">Standing rules</div><h2 style={{marginTop:4,marginBottom:10}}>Applied to every plan</h2>
+      <div className="row" style={{gap:8}}>
+        <span className="chip dog">Dog 60%</span><span className="chip cat">Cat 40%</span>
+        <span className="chip mov">Min MOV ₹699</span><span className="chip offer">Discount / offer-led where flagged</span>
+      </div>
+      <div className="row" style={{gap:8,marginTop:8}}>
+        <span className="chip food">Priority 1 · Food</span><span className="chip treats">Priority 2 · Treats</span><span className="chip life">Priority 3 · Lifestyle</span>
+      </div>
+      <p className="note" style={{marginTop:10}}>Food sub-priority — <b>Edible-Dog:</b> SWF, Hearty (Kibble/Gravy), NutriWag (Wet/Dry) · <b>Edible-Cat:</b> Meowsi (Food/Treats), NutriMeow (Wet/Dry), Litter-Meowsi.</p>
+    </div>
+
+    <div className="row" style={{marginBottom:8}}>
+      <div className="eyebrow" style={{flex:1}}>This month's plan · {plan.filter(p=>p.species==="Dog").length} dog / {plan.filter(p=>p.species==="Cat").length} cat</div>
+    </div>
+    <div className="grid" style={{gridTemplateColumns:"repeat(auto-fill,minmax(320px,1fr))",marginBottom:22}}>
+      {plan.map((p,i)=><div className={"brief "+(p.species==="Cat"?"cat":"")} key={p.id}>
+        <div className="bt">
+          <div><h3>{i+1}. {p.name}</h3><div className="why">{p.brand} · Cohort {p.cohort.n}</div></div>
+          {speciesChip(p.species)}
+        </div>
+        <div className="why" style={{marginTop:8}}>{p.cohort.target}</div>
+        <div className="hkq">“{p.cohort.hook}”</div>
+        <div className="rec">
+          {catChip(p.category)}
+          {p.cohort.offer && <span className="chip offer">offer-led</span>}
+          {p.price>=699 && <span className="chip mov">MOV ✓</span>}
+          {p.worked && <span className="verdict v-good">↻ repeat winner</span>}
+          {p.failed && <span className="verdict v-watch">⚠ reworked hook</span>}
+        </div>
+      </div>)}
+    </div>
+
+    <div className="row" style={{alignItems:"stretch"}}>
+      <div className="card pad" style={{flex:"1 1 340px"}}>
+        <div className="eyebrow" style={{color:"var(--good)"}}>What worked</div><h2 style={{marginTop:4,marginBottom:10}}>Repeat these</h2>
+        {wins.length===0&&<div className="note">No clear winners in the current asset set.</div>}
+        {wins.map(a=><div key={a.id} style={{padding:"9px 0",borderBottom:"1px solid var(--line-2)"}}>
+          <div className="row" style={{justifyContent:"space-between",alignItems:"center"}}>
+            <b style={{fontSize:13.5}}>{a.name}</b><span className="verdict v-good">CTR {a.ctr.toFixed(1)}% · conv {a.conv.toFixed(1)}%</span>
+          </div>
+          <div className="note" style={{marginTop:3}}>{a.ch} · {a.aud} · cohort {a.cohortN} · {K(a.rev)}</div>
+        </div>)}
+      </div>
+      <div className="card pad" style={{flex:"1 1 340px"}}>
+        <div className="eyebrow" style={{color:"var(--bad)"}}>What didn't</div><h2 style={{marginTop:4,marginBottom:10}}>Rework or drop</h2>
+        {flops.length===0&&<div className="note">Nothing flagged as failing.</div>}
+        {flops.map(a=><div key={a.id} style={{padding:"9px 0",borderBottom:"1px solid var(--line-2)"}}>
+          <div className="row" style={{justifyContent:"space-between",alignItems:"center"}}>
+            <b style={{fontSize:13.5}}>{a.name}</b><span className="verdict v-bad">CTR {a.ctr.toFixed(1)}% · conv {a.conv.toFixed(1)}%</span>
+          </div>
+          <div className="note" style={{marginTop:3}}>{a.ch} · {a.aud} · cohort {a.cohortN} — {a.offer?"offer didn't move it, try a new angle":"add an offer or switch cohort"}</div>
+        </div>)}
+      </div>
+    </div>
+  </div>;
+}
+
+/* ============================ CALENDAR ============================ */
+function CrmCalendar(){
+  const [ch,setCh]=useState({WA:true,PN:true,Email:true});
+  const [aud,setAud]=useState("All"); // All|D2C|Retail
+  // July 2026 starts Wednesday (0=Sun) -> offset 3
+  const monthName="July 2026", days=31, offset=3;
+  const assets = ASSETS;
+  // schedule sends across the month deterministically
+  const sends=[]; assets.forEach((a,idx)=>{
+    const day=2+((idx*5+seed(a.id))%27);
+    const chan=a.ch; sends.push({day,chan,aud:a.aud,name:a.name,cohortN:a.cohortN});
+  });
+  // add a few extra to populate
+  SALES.filter(r=>r.owner==="HUFT"&&r.cohorts.length).slice(0,10).forEach((r,i)=>{
+    const day=1+((i*7+seed(r.id+"x"))%30); const chan=["WA","PN","Email"][seed(r.id+"c")%3];
+    sends.push({day,chan,aud: seed(r.id+"a")%3===0?"Retail":"D2C", name:r.name, cohortN:1});
+  });
+  const chKey={WA:"wa",PN:"pn",Email:"em"};
+  const visible=s=> ch[s.chan] && (aud==="All"||s.aud===aud);
+  const Tog=({k})=><span className={"toggle "+(ch[k]?"on":"")} onClick={()=>setCh({...ch,[k]:!ch[k]})}>
+    <span className="dot" style={{background:k==="WA"?"#25946b":k==="PN"?"#3b6fd4":"#b6602a"}}></span>{k}</span>;
+  const AudTog=({v})=><span className={"toggle "+(aud===v?"on":"")} onClick={()=>setAud(v)}>{v}</span>;
+  const cells=[]; for(let i=0;i<offset;i++)cells.push(null); for(let d=1;d<=days;d++)cells.push(d);
+  return <div>
+    <h1>CRM calendar</h1>
+    <p className="sub">Scheduled sends across WhatsApp, Push and Email — filter by channel and by D2C vs Retail.</p>
+    <div className="pill-row">
+      <Tog k="WA"/><Tog k="PN"/><Tog k="Email"/>
+      <span style={{width:12}}/><AudTog v="All"/><AudTog v="D2C"/><AudTog v="Retail"/>
+      <span style={{flex:1}}/><span className="note" style={{alignSelf:"center"}}>{monthName}</span>
+    </div>
+    <div className="card pad">
+      <div className="cal">
+        {["Sun","Mon","Tue","Wed","Thu","Fri","Sat"].map(d=><div className="dow" key={d}>{d}</div>)}
+        {cells.map((d,i)=> d===null? <div className="day empty" key={i}></div> :
+          <div className="day" key={i}>
+            <div className="dn">{d}</div>
+            {sends.filter(s=>s.day===d&&visible(s)).slice(0,4).map((s,j)=><div className={"send "+chKey[s.chan]} key={j} title={s.name+" · "+s.aud}>{s.name}</div>)}
+          </div>)}
+      </div>
+      <div className="legend">
+        <span><span className="dot" style={{background:"#25946b"}}></span>WhatsApp</span>
+        <span><span className="dot" style={{background:"#3b6fd4"}}></span>Push</span>
+        <span><span className="dot" style={{background:"#b6602a"}}></span>Email</span>
+        <span style={{flex:1}}/><span>{sends.filter(visible).length} sends shown</span>
+      </div>
+    </div>
+  </div>;
+}
+
+/* ============================ ASSETS ============================ */
+function Assets({extra}){
+  const assets = ASSETS;
+  const all=[...assets,...extra];
+  const [f,setF]=useState("All");
+  const shown=all.filter(a=>f==="All"||a.verdict===f);
+  const counts={good:all.filter(a=>a.verdict==="good").length,watch:all.filter(a=>a.verdict==="watch").length,bad:all.filter(a=>a.verdict==="bad").length};
+  const Vt=({v,l})=><span className={"toggle "+(f===v?"on":"")} onClick={()=>setF(v)}>{l}</span>;
+  return <div>
+    <h1>Last month's assets</h1>
+    <p className="sub">Every send that ran, with performance and a verdict — this is what feeds the "worked / didn't work" loop in Strategy.</p>
+    <div className="pill-row">
+      <Vt v="All" l={`All (${all.length})`}/><Vt v="good" l={`Worked (${counts.good})`}/><Vt v="watch" l={`Watch (${counts.watch})`}/><Vt v="bad" l={`Didn't (${counts.bad})`}/>
+    </div>
+    <div className="card"><div style={{padding:8}}><table>
+      <thead><tr><th>Product</th><th>Cohort / hook</th><th>Ch</th><th>Aud</th><th className="r">Sent</th><th className="r">CTR</th><th className="r">Conv</th><th className="r">Rev</th><th>Verdict</th></tr></thead>
+      <tbody>{shown.map(a=><tr key={a.id}>
+        <td><b>{a.name}</b> {a.species&&speciesChip(a.species)}</td>
+        <td style={{maxWidth:260}}><span style={{color:"var(--muted)",fontSize:11.5}}>Cohort {a.cohortN}</span><br/>{a.hook}</td>
+        <td>{a.ch}</td><td>{a.aud}</td>
+        <td className="r">{a.sent.toLocaleString("en-IN")}</td>
+        <td className="r">{a.ctr.toFixed(1)}%</td>
+        <td className="r">{a.conv.toFixed(1)}%</td>
+        <td className="r"><b>{K(a.rev)}</b></td>
+        <td><span className={"verdict "+(a.verdict==="good"?"v-good":a.verdict==="watch"?"v-watch":"v-bad")}>{a.verdict==="good"?"Worked":a.verdict==="watch"?"Watch":"Didn't"}</span></td>
+      </tr>)}</tbody>
+    </table></div></div>
+  </div>;
+}
+
+/* ============================ CLEVERTAP UPLOAD ============================ */
+const SAMPLE_CSV = `campaign,product_sku,cohort,channel,audience,sent,ctr,conversion,revenue
+SWF Cohort3 Offer,SWF-FOOD,3,WA,D2C,42000,6.2,2.4,241000
+Hearty Dry Premium,HEART-DRY,1,Email,D2C,28000,5.1,2.1,187000
+Nutrimeow Switch,NMEOW-DRY,2,WA,D2C,31000,3.9,1.6,92000`;
+function Upload({onIngest}){
+  const [rows,setRows]=useState(null); const [err,setErr]=useState(""); const [name,setName]=useState("");
+  const inp=useRef();
+  function handle(file){
+    if(!file)return; setName(file.name); setErr("");
+    Papa.parse(file,{header:true,skipEmptyLines:true,complete:r=>{
+      if(!r.data||!r.data.length){setErr("No rows found in that file.");return;}
+      setRows(r.data);
+    },error:e=>setErr("Couldn't read that file — check it's a CSV export.")});
+  }
+  function ingest(){
+    const mapped=rows.map((r,i)=>{
+      const p=CATALOG.find(x=>x.sku===(r.product_sku||"").trim())||{};
+      const ctr=parseFloat(r.ctr)||0, conv=parseFloat(r.conversion)||0;
+      const verdict=ctr>4.5&&conv>1.8?"good":(ctr<2.6||conv<1.0?"bad":"watch");
+      return {id:"up"+i, pid:p.id, name:p.name||r.product_sku||r.campaign, species:p.species, category:p.category,
+        cohortN:parseInt(r.cohort)||1, ch:r.channel||"—", aud:r.audience||"—",
+        hook:(p.cohorts&&p.cohorts[(parseInt(r.cohort)||1)-1]?p.cohorts[(parseInt(r.cohort)||1)-1].hook:r.campaign||"—"),
+        sent:parseInt(r.sent)||0, ctr, conv, rev:parseInt(r.revenue)||0, verdict, offer:true};
+    });
+    onIngest(mapped); setRows(null); setName("");
+    alert(mapped.length+" campaigns ingested → now visible in Assets and folded into Strategy.");
+  }
+  function sample(){const blob=new Blob([SAMPLE_CSV],{type:"text/csv"});const u=URL.createObjectURL(blob);const a=document.createElement("a");a.href=u;a.download="clevertap_sample.csv";a.click();URL.revokeObjectURL(u);}
+  return <div>
+    <h1>Upload CleverTap report</h1>
+    <p className="sub">Drop a campaign export. It maps SKU → catalog, computes a verdict, and feeds Assets + the Strategy retrospective.</p>
+    <input ref={inp} type="file" accept=".csv" style={{display:"none"}} onChange={e=>handle(e.target.files[0])}/>
+    <div className="drop" onClick={()=>inp.current.click()}
+      onDragOver={e=>{e.preventDefault()}} onDrop={e=>{e.preventDefault();handle(e.dataTransfer.files[0])}}>
+      <div className="ic">📤</div>
+      <div style={{fontWeight:700,marginTop:8}}>Drop CleverTap CSV here, or click to browse</div>
+      <div className="note" style={{marginTop:4}}>{name||"Expected columns: campaign, product_sku, cohort, channel, audience, sent, ctr, conversion, revenue"}</div>
+    </div>
+    {err&&<div className="note" style={{color:"var(--bad)",marginTop:12}}>{err}</div>}
+    <div className="row" style={{marginTop:12}}>
+      <button className="btn ghost" onClick={sample}>Download sample CSV</button>
+      {rows&&<button className="btn" onClick={ingest}>Ingest {rows.length} rows</button>}
+    </div>
+    {rows&&<div className="card" style={{marginTop:16}}><div style={{padding:8}}><table>
+      <thead><tr>{Object.keys(rows[0]).map(k=><th key={k}>{k}</th>)}</tr></thead>
+      <tbody>{rows.slice(0,12).map((r,i)=><tr key={i}>{Object.keys(rows[0]).map(k=><td key={k}>{r[k]}</td>)}</tr>)}</tbody>
+    </table></div></div>}
+  </div>;
+}
+
+/* ============================ APP ============================ */
+function App(){
+  const [tab,setTab]=useState("catalog");
+  const [dash,setDash]=useState("sales");
+  const [period,setPeriod]=useState("lm");
+  const [uploaded,setUploaded]=useState([]);
+  const [status,setStatus]=useState(USE_MOCK?"mock":"loading"); // mock|loading|live|error
+  const [,setVer]=useState(0);
+  useEffect(()=>{ if(USE_MOCK) return;
+    loadData().then(()=>{setStatus("live");setVer(v=>v+1)})
+              .catch(e=>{console.error(e);setStatus("error")});
+  },[]);
+  const TABS=[["catalog","Catalog"],["dashboard","Dashboard"],["strategy","Strategy"],["calendar","Calendar"],["assets","Assets"],["upload","Upload"]];
+  const showPeriod = tab==="dashboard"||tab==="strategy";
+  const badge = status==="mock"?" · MOCK":status==="loading"?" · LOADING":status==="live"?" · LIVE":" · API OFFLINE";
+  return <div>
+    <div className="top">
+      <div className="top-in">
+        <div className="brand"><div className="paw">H</div><div>HUFT CRM Strategy<small>Sales-driven planning</small></div></div>
+        <span className="build" style={status==="error"?{color:"var(--bad)",borderColor:"var(--bad)"}:status==="live"?{color:"var(--good)",borderColor:"#C6E9D6"}:{}}>{BUILD}{badge}</span>
+        <div className="spacer"></div>
+        {showPeriod && <div className="period">{PERIODS.map(p=><button key={p.k} className={period===p.k?"on":""} onClick={()=>setPeriod(p.k)}>{p.l}</button>)}</div>}
+      </div>
+      <div className="nav">{TABS.map(([k,l])=><button key={k} className={tab===k?"on":""} onClick={()=>setTab(k)}>{l}</button>)}</div>
+    </div>
+    <div className="wrap">
+      {status==="error"&&<div className="card pad" style={{marginBottom:18,borderColor:"var(--bad)",background:"var(--bad-soft)"}}>
+        <b>Can't reach the sales-api at {API_BASE}.</b> <span className="note">Showing mock data. Start the API (see the sales-api README) or set <code>USE_MOCK=true</code>.</span>
+      </div>}
+      {tab==="catalog"&&<Catalog/>}
+      {tab==="dashboard"&&<div>
+        <h1>Dashboard</h1><p className="sub">Sales insights, auto-suggested audience cohorts, and the priority order that drives Strategy.</p>
+        <div className="subnav">
+          <button className={dash==="sales"?"on":""} onClick={()=>setDash("sales")}>Sales insights</button>
+          <button className={dash==="cohorts"?"on":""} onClick={()=>setDash("cohorts")}>Audience cohorts</button>
+          <button className={dash==="priorities"?"on":""} onClick={()=>setDash("priorities")}>Priorities</button>
+        </div>
+        {dash==="sales"&&<SalesInsights period={period}/>}
+        {dash==="cohorts"&&<AudienceCohorts/>}
+        {dash==="priorities"&&<Priorities period={period}/>}
+      </div>}
+      {tab==="strategy"&&<Strategy period={period}/>}
+      {tab==="calendar"&&<CrmCalendar/>}
+      {tab==="assets"&&<Assets extra={uploaded}/>}
+      {tab==="upload"&&<Upload onIngest={r=>setUploaded([...uploaded,...r])}/>}
+    </div>
+  </div>;
+}
+ReactDOM.createRoot(document.getElementById("root")).render(<App/>);
+</script>
+</body>
+</html>
