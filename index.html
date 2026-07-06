@@ -52,7 +52,7 @@ const KB={"rtb":{"sara":{"promise":"Expert-balanced, human-grade fresh meals \u2
 </script>
 <script type="text/babel" data-presets="react">
 const {useState,useMemo,useRef,useEffect}=React;
-const BUILD="STRAT-3.8.0";
+const BUILD="STRAT-3.8.1";
 
 /* ===== Creative Engine design language ===== */
 const C={navy:"#241A14",navy2:"#32241B",coral:"#E8632A",coralSoft:"#FBE7DA",
@@ -62,7 +62,7 @@ const C={navy:"#241A14",navy2:"#32241B",coral:"#E8632A",coralSoft:"#FBE7DA",
   amber:"#B45309",amberSoft:"#FEF3C7"};
 const Chip=({label,active,onClick,color,soft})=><button onClick={onClick} style={{fontSize:12,fontWeight:600,padding:"5px 11px",borderRadius:999,cursor:"pointer",border:`1px solid ${active?(color||C.coral):C.line}`,background:active?(soft||C.coralSoft):"#fff",color:active?(color||C.coral):C.ink}}>{label}</button>;
 const Tag=({children,color,soft})=><span style={{fontSize:10.5,fontWeight:700,padding:"3px 9px",borderRadius:999,background:soft||C.paper,color:color||C.sub,border:`1px solid ${C.line}`,whiteSpace:"nowrap",display:"inline-flex",alignItems:"center",gap:4}}>{children}</span>;
-const Card=({children,style})=><div style={{background:"#fff",border:`1px solid ${C.line}`,borderRadius:14,boxShadow:"0 1px 2px rgba(31,39,52,.04),0 6px 18px rgba(31,39,52,.04)",...style}}>{children}</div>;
+const Card=({children,style,...rest})=><div {...rest} style={{background:"#fff",border:`1px solid ${C.line}`,borderRadius:14,boxShadow:"0 1px 2px rgba(31,39,52,.04),0 6px 18px rgba(31,39,52,.04)",...style}}>{children}</div>;
 const Eyebrow=({children,color})=><div style={{fontSize:10.5,fontWeight:800,color:color||C.sub,textTransform:"uppercase",letterSpacing:.5}}>{children}</div>;
 const H1=({children})=><div style={{fontSize:21,fontWeight:800,color:C.ink,letterSpacing:-.3}}>{children}</div>;
 const Sub=({children})=><div style={{fontSize:12.5,color:C.sub,marginTop:3,lineHeight:1.45}}>{children}</div>;
